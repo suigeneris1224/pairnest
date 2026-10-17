@@ -1,0 +1,626 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pairnest/app.dart';
+import 'package:pairnest/core/format.dart';
+import 'package:pairnest/core/theme/palettes.dart';
+import 'package:pairnest/data/mock_repository.dart';
+import 'package:pairnest/data/models.dart';
+import 'package:pairnest/data/providers.dart';
+import 'package:pairnest/router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<ProviderContainer> _pumpApp(
+  WidgetTester tester,
+  Map<String, Object> prefs, {
+  bool reducedMotion = false,
+  MockRepository? repo,
+}) async {
+  SharedPreferences.setMockInitialValues(prefs);
+  if (reducedMotion) {
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+  }
+  final instance = await SharedPreferences.getInstance();
+  tester.view.physicalSize = const Size(1170, 2532);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        prefsProvider.overrideWithValue(instance),
+        useGoogleFontsProvider.overrideWithValue(false),
+        repositoryProvider.overrideWithValue(repo ?? MockRepository(latency: Duration.zero)),
+      ],
+      child: const PairnestApp(),
+    ),
+  );
+  await _settle(tester);
+  return ProviderScope.containerOf(tester.element(find.byType(PairnestApp)));
+}
+
+Future<ProviderContainer> _signedIn(WidgetTester tester, {MockRepository? repo}) async {
+  final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true}, repo: repo);
+  // Timers only fire while the fake clock is pumped, so pump before awaiting.
+  final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
+  await _settle(tester);
+  await login;
+  return container;
+}
+
+/// pumpAndSettle never settles while a spinner is animating.
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+void main() {
+  testWidgets('welcome → explore the demo nest → home dashboard', (tester) async {
+    await _pumpApp(tester, {});
+
+    expect(find.text('Better\nMoney, Happier\nTogether.'), findsOneWidget);
+    expect(find.text('Email'), findsNothing);
+    await tester.tap(find.text('Explore the demo nest'));
+    await _settle(tester);
+
+    expect(find.text('Make it yours'), findsOneWidget);
+    await tester.tap(find.text('Lavender'));
+    await tester.tap(find.text('Continue'));
+    await _settle(tester);
+
+    expect(find.text('Alex & Sam'), findsOneWidget);
+    expect(find.text('Shared Balance'), findsOneWidget);
+    // Balance = ₱32,000 budget − ₱17,780 seeded spending.
+    expect(find.text('₱14,220'), findsOneWidget);
+    expect(find.text("This Month's Spending"), findsOneWidget);
+  });
+
+  testWidgets('choosing a palette re-themes the app', (tester) async {
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true});
+    expect(container.read(themeProvider).id, 'sage');
+
+    final select = container.read(themeProvider.notifier).select('midnight');
+    await _settle(tester);
+    await select;
+
+    final theme = Theme.of(tester.element(find.byType(Scaffold).first));
+    expect(theme.brightness, Brightness.dark);
+    expect(theme.extension<PairnestPalette>()!.id, 'midnight');
+  });
+
+  testWidgets('bottom navigation reaches every tab', (tester) async {
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true});
+    // Timers only fire while the fake clock is pumped, so pump before awaiting.
+    final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
+    await _settle(tester);
+    await login;
+
+    for (final (tab, title) in [('Activity', 'Money in'), ('Goals', 'Japan Trip'), ('Feelings', 'Our Feelings'), ('Us', 'Money Talks')]) {
+      await tester.tap(find.text(tab).last);
+      await _settle(tester);
+      expect(find.text(title), findsWidgets, reason: tab);
+    }
+  });
+
+  testWidgets('every sub-screen renders without layout errors', (tester) async {
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true});
+    final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
+    await _settle(tester);
+    await login;
+
+    final router = container.read(routerProvider);
+    for (final (route, title) in [
+      ('/home/budgets', 'Budgets'),
+      ('/home/settle', 'Settle Up'),
+      ('/add', 'Add Expense'),
+      ('/add?type=income', 'Add Income'),
+      ('/feelings/check-in', 'How are you feeling today?'),
+      ('/us/talks', 'Weekly Conversation'),
+      ('/us/planner', 'Date & Life Planner'),
+      ('/us/personalize', 'Choose your theme'),
+    ]) {
+      router.go(route);
+      await _settle(tester);
+      expect(find.text(title), findsWidgets, reason: route);
+    }
+
+    // Tabs inside sub-screens.
+    router.go('/us/planner');
+    await _settle(tester);
+    await tester.tap(find.text('Calendar'));
+    await _settle(tester);
+    router.go('/feelings');
+    await _settle(tester);
+    for (final tab in ['Both', 'Trends']) {
+      await tester.tap(find.text(tab));
+      await _settle(tester);
+    }
+    router.go('/us/personalize');
+    await _settle(tester);
+    await tester.tap(find.text('Settings'));
+    await _settle(tester);
+    expect(find.text('Remove this phone'), findsOneWidget);
+  });
+
+  testWidgets('reduced motion shows final values without waiting for animations', (tester) async {
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true}, reducedMotion: true);
+    final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
+    await _settle(tester);
+    await login;
+
+    // A couple of frames is enough: count-ups, fills and entrances are instant.
+    container.read(routerProvider).go('/home/budgets');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('₱32,000'), findsWidgets);
+  });
+
+  testWidgets('eye toggle hides and reveals the balance', (tester) async {
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true});
+    final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
+    await _settle(tester);
+    await login;
+
+    expect(find.text('₱14,220'), findsOneWidget);
+    await tester.tap(find.byTooltip('Hide amounts'));
+    await _settle(tester);
+    expect(find.text('₱14,220'), findsNothing);
+    expect(find.text('₱ ••••••'), findsOneWidget);
+    expect(container.read(hideAmountsProvider), isTrue);
+
+    await tester.tap(find.byTooltip('Show amounts'));
+    await _settle(tester);
+    expect(find.text('₱14,220'), findsOneWidget);
+  });
+
+  testWidgets('bell shows the partner feed and clears the dot', (tester) async {
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true});
+    final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
+    await _settle(tester);
+    await login;
+
+    expect(container.read(hasUnseenFeedProvider), isTrue);
+    await tester.tap(find.byTooltip('Notifications'));
+    await _settle(tester);
+    expect(find.text('Notifications'), findsOneWidget);
+    expect(find.text('Sam saved toward Japan Trip'), findsOneWidget);
+    expect(container.read(hasUnseenFeedProvider), isFalse);
+  });
+
+  testWidgets('a brand-new nest shows friendly empty states', (tester) async {
+    final container = await _signedIn(tester, repo: MockRepository(latency: Duration.zero, seed: false));
+    final router = container.read(routerProvider);
+
+    await tester.scrollUntilVisible(find.textContaining('Nothing coming up'), 300, scrollable: find.byType(Scrollable).first);
+    for (final (route, text) in [
+      ('/activity', 'No transactions this month'),
+      ('/goals', 'Dream something together'),
+      ('/feelings', 'How are you feeling?'),
+      ('/us/planner', 'Plan your next date'),
+      ('/home/budgets', 'No budget for this month yet'),
+    ]) {
+      router.go(route);
+      await _settle(tester);
+      expect(find.text(text), findsOneWidget, reason: route);
+    }
+    expect(find.textContaining('Add rent, subscriptions'), findsOneWidget);
+  });
+
+  testWidgets('tapping a transaction edits it in place', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/activity');
+    await _settle(tester);
+
+    await tester.tap(find.text('Groceries'));
+    await _settle(tester);
+    expect(find.text('Edit Expense'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '1250'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, '1250'), '1300');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await _settle(tester);
+    expect(find.text('Edit Expense'), findsNothing);
+    expect(find.text('- ₱1,300'), findsOneWidget);
+    expect(find.text('- ₱1,250'), findsNothing);
+  });
+
+  testWidgets('swipe deletes a transaction and Undo brings it back', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/activity');
+    await _settle(tester);
+
+    await tester.drag(find.text('Groceries'), const Offset(-600, 0));
+    await _settle(tester);
+    expect(find.text('Groceries'), findsNothing);
+    expect(find.text('"Groceries" deleted'), findsOneWidget);
+
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect(find.text('Groceries'), findsOneWidget);
+  });
+
+  testWidgets('a due bill on Home can be marked paid', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    await _signedIn(tester, repo: repo);
+    // Mock futures only resolve while the fake clock is pumped.
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    final rent = (await resolve(repo.bills())).firstWhere((b) => b.title == 'Rent');
+
+    await tester.ensureVisible(find.text('Rent'));
+    await _settle(tester);
+    expect(find.text('Due in 3 days'), findsOneWidget);
+    await tester.tap(find.text('Rent'));
+    await _settle(tester);
+    expect(find.text('Mark Rent as paid?'), findsOneWidget);
+
+    await tester.tap(find.text('Paid ₱15,000'));
+    await _settle(tester);
+    expect(find.textContaining('Rent paid'), findsOneWidget);
+
+    final paid = (await resolve(repo.bills())).firstWhere((b) => b.id == rent.id);
+    expect(paid.nextDueOn.month, (rent.nextDueOn.month % 12) + 1);
+    final txns = await resolve(repo.transactions(month: DateTime.now()));
+    expect(txns.where((t) => t.title == 'Rent' && t.amount == 15000), hasLength(1));
+  });
+
+  testWidgets('settling up from the Home nudge evens the balance, and Undo restores it', (tester) async {
+    await _signedIn(tester);
+
+    expect(find.text('Sam owes you ₱415'), findsOneWidget);
+    await tester.tap(find.text('Sam owes you ₱415'));
+    await _settle(tester);
+    expect(find.text('Sam owes you'), findsOneWidget);
+    expect(find.text('₱415'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Settle up'));
+    await _settle(tester);
+    await tester.tap(find.text('Record ₱415'));
+    await _settle(tester);
+    expect(find.text("You're all even"), findsOneWidget);
+    expect(find.text('Sam paid you'), findsOneWidget);
+    expect(find.text('Settled up · ₱415'), findsOneWidget);
+
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect(find.text('₱415'), findsOneWidget);
+    expect(find.text('Sam paid you'), findsNothing);
+  });
+
+  testWidgets('an expense paid by the partner moves the balance by half', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    container.read(routerProvider).push('/add');
+    await _settle(tester);
+
+    await tester.enterText(find.byType(TextField).first, '1000');
+    await tester.ensureVisible(find.text('Paid by'));
+    await _settle(tester);
+    await tester.tap(find.text('Sam'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await _settle(tester);
+
+    // Sam's split total goes 5,400 → 6,400 against Alex's 6,230.
+    final balance = repo.balance();
+    await _settle(tester);
+    final owes = (await balance).owes!;
+    expect([owes.from.name, owes.amount], ['Alex', 85]);
+    expect(find.text('You owe Sam ₱85'), findsOneWidget);
+  });
+
+  testWidgets('settle up waits for the partner to join', (tester) async {
+    final repo = MockRepository(latency: Duration.zero, seed: false);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true}, repo: repo);
+    final session = container.read(sessionProvider.notifier);
+    await resolve(session.start('Alex', const OnboardingProfile()));
+    container.read(pendingRecoveryKeyProvider.notifier).saved();
+    await resolve(session.createNest());
+
+    container.read(routerProvider).go('/home/settle');
+    await _settle(tester);
+    expect(find.text('Invite your partner to start splitting'), findsOneWidget);
+  });
+
+  testWidgets('Home is a Pairnest wallet card, and Transfer saves without spending', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    expect(find.text('ALEX & SAM'), findsOneWidget);
+    expect(find.text('Shared Balance'), findsOneWidget);
+    expect(find.text('₱14,220'), findsWidgets);
+    final japanBefore = (await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').saved;
+
+    await tester.tap(find.text('Transfer'));
+    await _settle(tester);
+    expect(find.text('Transfer to a goal'), findsOneWidget);
+    await tester.tap(find.text('Japan Trip').last);
+    await tester.tap(find.widgetWithText(ChoiceChip, '₱1,000'));
+    await _settle(tester);
+    await tester.tap(find.text('Transfer ₱1,000 to Japan Trip'));
+    await _settle(tester);
+
+    expect(find.text('₱1,000 moved to Japan Trip'), findsOneWidget);
+    expect(find.text('₱14,220'), findsWidgets, reason: 'savings are not spending');
+    expect(find.text('₱1,000 saved toward goals this month'), findsOneWidget);
+    expect((await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').saved, japanBefore + 1000);
+
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect(find.textContaining('saved toward goals'), findsNothing);
+    expect((await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').saved, japanBefore);
+
+    // Transfer again, then delete it from Activity.
+    await resolve(repo.contribute(1, 2500));
+    container.read(routerProvider).go('/activity');
+    invalidateMoneyIn(container);
+    await _settle(tester);
+    expect(find.text('Transfer to Japan Trip'), findsOneWidget);
+    expect(find.text('→ ₱2,500'), findsOneWidget);
+    await tester.drag(find.text('Transfer to Japan Trip'), const Offset(-600, 0));
+    await _settle(tester);
+    expect(find.text('Transfer to Japan Trip'), findsNothing);
+    expect((await resolve(repo.goals())).firstWhere((g) => g.id == 1).saved, japanBefore);
+  });
+
+  testWidgets('a bill due tomorrow is a reminder on Home and in the bell, and paying it can be undone', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    // Demo bills are 3+ days away: no reminder yet.
+    expect(find.text('Mark paid'), findsNothing);
+
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final internet = await resolve(
+      repo.addBill(BillDraft(title: 'Internet', amount: 1699, category: 'bills', frequency: 'monthly', nextDueOn: tomorrow)),
+    );
+    invalidateMoneyIn(container);
+    await _settle(tester);
+    expect(find.text('Internet'), findsWidgets);
+    expect(find.text('Due tomorrow'), findsWidgets);
+    expect(find.widgetWithText(TextButton, 'Mark paid'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Notifications'));
+    await _settle(tester);
+    expect(find.text('REMINDERS'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Mark paid'), findsNWidgets(2));
+    await tester.tapAt(const Offset(20, 20));
+    await _settle(tester);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Mark paid'));
+    await _settle(tester);
+    await tester.tap(find.text('Paid ₱1,699'));
+    await _settle(tester);
+    expect(find.textContaining('Internet paid'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Mark paid'), findsNothing);
+    expect((await resolve(repo.transactions(month: now))).where((t) => t.title == 'Internet'), hasLength(1));
+
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect(find.widgetWithText(TextButton, 'Mark paid'), findsOneWidget);
+    expect((await resolve(repo.bills())).firstWhere((b) => b.id == internet.id).nextDueOn, tomorrow);
+    expect((await resolve(repo.transactions(month: now))).where((t) => t.title == 'Internet'), isEmpty);
+  });
+
+  testWidgets('onboarding asks about you two and turns the answers into your nest', (tester) async {
+    final repo = MockRepository(latency: Duration.zero, seed: false);
+    final container = await _pumpApp(tester, {}, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    await tester.tap(find.text('Get Started'));
+    await _settle(tester);
+    expect(find.text('First, about you two'), findsOneWidget);
+    // A name is required.
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Next')).onPressed, isNull);
+    await tester.enterText(find.widgetWithText(TextField, 'What should we call you?'), 'Alex');
+    await tester.enterText(find.widgetWithText(TextField, "Your partner's name (optional)"), 'Sam');
+    await tester.tap(find.text('Married'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await _settle(tester);
+
+    expect(find.text('What are you saving for?'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Skip'), findsOneWidget);
+    await tester.tap(find.text('Emergency fund'));
+    await tester.tap(find.text('Travel'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await _settle(tester);
+
+    expect(find.text('Any family plans ahead?'), findsOneWidget);
+    await tester.tap(find.text('Having kids'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await _settle(tester);
+
+    expect(find.text('How do you handle money?'), findsOneWidget);
+    await tester.tap(find.text('Partly shared'));
+    await tester.enterText(find.widgetWithText(TextField, 'Monthly shared budget (optional)'), '30000');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create my nest'));
+    await _settle(tester);
+
+    expect(find.text('Save your recovery key'), findsOneWidget);
+    expect(find.text('K7QM-2WXP-9DTR-H4NB'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Continue')).onPressed, isNull);
+    await tester.tap(find.text("I've saved my recovery key"));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await _settle(tester);
+
+    expect(find.text("Hi Alex! Let's build your nest"), findsOneWidget);
+    expect(find.text('Join Sam'), findsOneWidget);
+    await tester.tap(find.text('Create our nest'));
+    await _settle(tester);
+    expect(find.text('Make it yours'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await _settle(tester);
+
+    expect(find.text('Alex & Sam'), findsOneWidget);
+    expect(find.text('₱30,000'), findsWidgets);
+    final goals = (await resolve(repo.goals())).map((g) => g.name).toList();
+    expect(goals, unorderedEquals(['Emergency Fund', 'Travel Fund', 'Baby Fund']));
+    expect(container.read(sessionProvider).value!.couple!.stage, 'married');
+  });
+
+  testWidgets('a recovery key brings you back into your nest', (tester) async {
+    await _pumpApp(tester, {});
+    await tester.tap(find.text('I already have a nest'));
+    await _settle(tester);
+    expect(find.text('Back to your nest'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'ABCD1234');
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await _settle(tester);
+    expect(find.text('Make it yours'), findsOneWidget, reason: 'an 8-character partner code signs you in');
+  });
+
+  testWidgets('a wrong recovery key is refused', (tester) async {
+    await _pumpApp(tester, {});
+    await tester.tap(find.text('I already have a nest'));
+    await _settle(tester);
+    await tester.tap(find.text('Recovery key').first);
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'NOPE-NOPE-NOPE-NOPE');
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await _settle(tester);
+    expect(find.textContaining("doesn't match any nest"), findsOneWidget);
+    expect(find.text('Back to your nest'), findsOneWidget);
+  });
+
+  testWidgets('Personalize re-links a phone and asks before removing this one', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/us/personalize');
+    await _settle(tester);
+    await tester.tap(find.text('Settings'));
+    await _settle(tester);
+    expect(find.text('Anonymous: no email, no password'), findsOneWidget);
+
+    await tester.tap(find.text('Re-link a phone'));
+    await _settle(tester);
+    expect(find.text('Re-link Sam'), findsOneWidget);
+    expect(find.text('QX4M7KDP'), findsOneWidget);
+    await tester.tap(find.text('Done'));
+    await _settle(tester);
+
+    await tester.ensureVisible(find.text('Remove this phone'));
+    await tester.tap(find.text('Remove this phone'));
+    await _settle(tester);
+    expect(find.text('Remove this phone?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await _settle(tester);
+    expect(container.read(sessionProvider).value, isNotNull);
+  });
+
+  testWidgets("a goal's target can be edited", (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    container.read(routerProvider).go('/goals');
+    await _settle(tester);
+
+    await tester.tap(find.byTooltip('Options for New Home'));
+    await _settle(tester);
+    await tester.tap(find.text('Edit goal'));
+    await _settle(tester);
+    expect(find.text('Edit goal'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '2000000'), '2500000');
+    await tester.tap(find.text('Save changes'));
+    await _settle(tester);
+
+    final goals = repo.goals();
+    await _settle(tester);
+    expect((await goals).firstWhere((g) => g.name == 'New Home').target, 2500000);
+  });
+
+  testWidgets('a transfer that completes a goal celebrates it', (tester) async {
+    await _signedIn(tester);
+
+    await tester.tap(find.text('Transfer'));
+    await _settle(tester);
+    await tester.tap(find.text('Emergency Fund').last);
+    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '35000');
+    await tester.pump();
+    await tester.tap(find.text('Transfer ₱35,000 to Emergency Fund'));
+    await _settle(tester);
+
+    expect(find.text('You reached Emergency Fund!'), findsOneWidget);
+    await tester.tap(find.text('Yay!'));
+    await _settle(tester);
+    expect(find.text('You reached Emergency Fund!'), findsNothing);
+  });
+
+  testWidgets('cancelling a goal releases its savings, and it can be restored', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    container.read(routerProvider).go('/goals');
+    await _settle(tester);
+    await tester.scrollUntilVisible(find.byTooltip('Options for Japan Trip'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.byTooltip('Options for Japan Trip'));
+    await _settle(tester);
+    await tester.tap(find.text('Cancel goal'));
+    await _settle(tester);
+    expect(find.text('Cancel Japan Trip?'), findsOneWidget);
+    expect(find.textContaining('₱12,000 you saved will be released'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Cancel goal'));
+    await _settle(tester);
+
+    expect(find.text('Japan Trip cancelled'), findsOneWidget);
+    expect(find.byTooltip('Options for Japan Trip'), findsNothing);
+    expect((await resolve(repo.transactions(month: DateTime.now()))).where((t) => t.isRelease), hasLength(1));
+
+    // Undo (before the message times out) restores it straight away.
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect((await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').cancelled, isFalse);
+    expect((await resolve(repo.transactions(month: DateTime.now()))).where((t) => t.isRelease), isEmpty);
+
+    // Cancel again: the release is logged, and Japan Trip isn't offered for transfers.
+    await resolve(repo.cancelGoal((await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').id));
+    invalidateMoneyIn(container);
+    await _settle(tester);
+    final txns = await resolve(repo.transactions(month: DateTime.now()));
+    expect(txns.where((t) => t.isRelease && t.title == 'Released from Japan Trip' && t.amount == 12000), hasLength(1));
+    final active = await resolve(container.read(activeGoalsProvider.future));
+    expect(active.map((g) => g.name), isNot(contains('Japan Trip')));
+
+    // Restore from the Cancelled section.
+    await tester.scrollUntilVisible(find.text('Cancelled goals (1)'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('Cancelled goals (1)'));
+    await _settle(tester);
+    expect(find.text('₱12,000 released · ${shortDate(DateTime.now())}'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Restore'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+    await _settle(tester);
+    await tester.tap(find.text('Restore'));
+    await _settle(tester);
+    expect(find.text('Japan Trip is back'), findsOneWidget);
+    expect(find.text('Cancelled goals (1)'), findsNothing);
+  });
+}
