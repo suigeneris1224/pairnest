@@ -293,7 +293,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 12),
         Row(
           children: [
-            TextButton(onPressed: _busy ? null : () => _go(_page - 1), child: const Text('Back')),
+            // A solid button so the background leaves can't swallow it.
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                backgroundColor: p.surface,
+                minimumSize: const Size(104, 52),
+                side: BorderSide(color: p.border),
+              ),
+              onPressed: _busy ? null : () => _go(_page - 1),
+              icon: const Icon(Icons.arrow_back_rounded, size: 18),
+              label: const Text('Back'),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: FilledButton(
