@@ -480,10 +480,12 @@ class MockRepository implements PairnestRepository {
   });
 
   @override
-  Future<List<Txn>> transactions({DateTime? month, String query = ''}) => _delay(() {
+  Future<List<Txn>> transactions({DateTime? month, DateTime? from, DateTime? to, String query = ''}) => _delay(() {
     final q = query.trim().toLowerCase();
+    DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
     return _txns
         .where((t) => month == null || (t.occurredOn.year == month.year && t.occurredOn.month == month.month))
+        .where((t) => from == null || to == null || (!day(t.occurredOn).isBefore(day(from)) && !day(t.occurredOn).isAfter(day(to))))
         .where((t) => q.isEmpty || t.title.toLowerCase().contains(q))
         .toList()
       ..sort((a, b) => b.occurredOn.compareTo(a.occurredOn) != 0 ? b.occurredOn.compareTo(a.occurredOn) : b.id.compareTo(a.id));

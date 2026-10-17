@@ -561,4 +561,30 @@ class PairnestApiTest extends TestCase
         $this->getJson('/api/v1/dashboard')->assertJsonPath('saved_this_month', 12000);
         $this->postJson("/api/v1/goals/{$goal->id}/contributions", ['amount' => 100])->assertCreated();
     }
+    public function test_transactions_by_date_range_and_bigger_pages(): void
+    {
+        [$couple, $alex] = $this->pair();
+        $row = fn (string $day, string $title) => ['user_id' => $alex->id, 'type' => 'expense', 'amount' => 10, 'category' => 'food', 'title' => $title, 'occurred_on' => $day];
+        $couple->transactions()->createMany([
+            $row('2028-01-31', 'Before'),
+            $row('2028-02-01', 'First day'),
+            $row('2028-02-20', 'Middle'),
+            $row('2028-03-10', 'Last day'),
+            $row('2028-03-11', 'After'),
+        ]);
+        for ($i = 0; $i < 31; $i++) {
+            $couple->transactions()->create($row('2028-06-15', "Coffee {$i}"));
+        }
+
+        Sanctum::actingAs($alex);
+        $titles = collect($this->getJson('/api/v1/transactions?from=2028-02-01&to=2028-03-10')->assertOk()->json('data'))->pluck('title')->all();
+        $this->assertSame(['Last day', 'Middle', 'First day'], $titles);
+
+        $this->getJson('/api/v1/transactions?month=2028-06')->assertJsonCount(30, 'data');
+        $this->getJson('/api/v1/transactions?month=2028-06&per_page=500')->assertJsonCount(31, 'data');
+
+        $this->getJson('/api/v1/transactions?from=2028-03-10&to=2028-02-01')->assertUnprocessable();
+        $this->getJson('/api/v1/transactions?from=2027-01-01&to=2028-06-30')->assertUnprocessable();
+        $this->getJson('/api/v1/transactions?per_page=501')->assertUnprocessable();
+    }
 }

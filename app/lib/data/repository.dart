@@ -30,7 +30,8 @@ abstract class PairnestRepository {
   /// The partner's recent actions, newest first.
   Future<List<FeedItem>> feed();
 
-  Future<List<Txn>> transactions({DateTime? month, String query = ''});
+  /// A month's transactions, or those between [from] and [to] (inclusive).
+  Future<List<Txn>> transactions({DateTime? month, DateTime? from, DateTime? to, String query = ''});
   Future<Txn> addTransaction(TxnDraft draft);
   Future<Txn> updateTransaction(int id, TxnDraft draft);
   Future<void> deleteTransaction(int id);

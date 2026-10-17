@@ -144,6 +144,30 @@ void main() {
     expect((await robin.goals()).map((g) => g.name), unorderedEquals(['Emergency Fund', 'Travel Fund', 'Baby Fund']));
     expect((await robin.budget(month)).total, 25000);
 
+    // Activity loads the whole month (no 30-item cut-off) and custom ranges.
+    final day = DateTime(month.year, month.month, 1);
+    for (var i = 0; i < 31; i++) {
+      await robin.addTransaction(
+        TxnDraft(type: 'expense', amount: 10, category: 'food', title: 'Coffee $i', paymentMethod: 'cash', isSplit: false, occurredOn: day),
+      );
+    }
+    final lastMonth = DateTime(month.year, month.month - 1, 20);
+    await robin.addTransaction(
+      TxnDraft(
+        type: 'expense',
+        amount: 99,
+        category: 'food',
+        title: 'Old dinner',
+        paymentMethod: 'cash',
+        isSplit: false,
+        occurredOn: lastMonth,
+      ),
+    );
+    expect((await robin.transactions(month: month)).where((t) => t.title.startsWith('Coffee')), hasLength(31));
+    final ranged = await robin.transactions(from: DateTime(month.year, month.month - 1, 1), to: day);
+    expect(ranged.map((t) => t.title), contains('Old dinner'));
+    expect(ranged, hasLength(32));
+
     // Alex loses their phone: Sam re-links them, and the old phone is signed out.
     final relink = await sam.relinkCode();
     expect(relink.forName, 'Alex');

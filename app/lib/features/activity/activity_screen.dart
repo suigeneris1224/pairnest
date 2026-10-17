@@ -11,7 +11,9 @@ import '../../core/mascot/mascot_controller.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
 import '../../data/models.dart';
+import '../../core/widgets/categories.dart';
 import '../../data/providers.dart';
+import 'txn_filter.dart';
 import 'txn_tile.dart';
 
 /// Transaction history with month switcher and search.
@@ -24,7 +26,11 @@ class ActivityScreen extends ConsumerStatefulWidget {
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   DateTime _month = monthStart(DateTime.now());
+
+  /// A custom period instead of [_month].
+  DateTimeRange? _range;
   String _query = '';
+  TxnFilter _filter = TxnFilter.none;
   Timer? _debounce;
 
   @override
@@ -70,10 +76,43 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     );
   }
 
+  FutureProvider<List<Txn>> get _source {
+    final range = _range;
+    return range == null ? transactionsProvider((_month, _query)) : transactionsRangeProvider((range.start, range.end, _query));
+  }
+
+  Future<void> _pickRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      initialDateRange: _range ?? DateTimeRange(start: _month, end: DateTime(_month.year, _month.month + 1, 0)),
+    );
+    if (picked == null) return;
+    if (picked.end.difference(picked.start).inDays > 366) {
+      if (mounted) showSnack(context, 'Pick a range of a year or less.');
+      return;
+    }
+    setState(() => _range = picked);
+  }
+
+  Future<void> _openFilters(List<Txn> base) async {
+    final picked = await showModalBottomSheet<TxnFilter>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      builder: (_) => _FilterSheet(initial: _filter, base: base),
+    );
+    if (picked != null) setState(() => _filter = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.pn;
-    final txns = ref.watch(transactionsProvider((_month, _query)));
+    final me = ref.watch(meProvider);
+    final txns = ref.watch(_source);
+    final range = _range;
 
     return Scaffold(
       floatingActionButton: FloatingActionButton(
@@ -95,27 +134,59 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      children: range == null
+                          ? [
+                              IconButton(
+                                tooltip: 'Previous month',
+                                icon: const Icon(Icons.chevron_left_rounded),
+                                onPressed: () => setState(() => _month = DateTime(_month.year, _month.month - 1)),
+                              ),
+                              Text(monthLabel(_month), style: const TextStyle(fontWeight: FontWeight.w700)),
+                              IconButton(
+                                tooltip: 'Next month',
+                                icon: const Icon(Icons.chevron_right_rounded),
+                                onPressed: () => setState(() => _month = DateTime(_month.year, _month.month + 1)),
+                              ),
+                              IconButton(tooltip: 'Pick dates', icon: const Icon(Icons.date_range_rounded), onPressed: _pickRange),
+                            ]
+                          : [
+                              IconButton(tooltip: 'Pick dates', icon: const Icon(Icons.date_range_rounded), onPressed: _pickRange),
+                              Text(_rangeLabel(range), style: const TextStyle(fontWeight: FontWeight.w700)),
+                              IconButton(
+                                tooltip: 'Back to months',
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () => setState(() => _range = null),
+                              ),
+                            ],
+                    ),
+                    Row(
                       children: [
-                        IconButton(
-                          tooltip: 'Previous month',
-                          icon: const Icon(Icons.chevron_left_rounded),
-                          onPressed: () => setState(() => _month = DateTime(_month.year, _month.month - 1)),
+                        Expanded(
+                          child: TextField(
+                            onChanged: _search,
+                            decoration: InputDecoration(
+                              hintText: 'Search transactions',
+                              prefixIcon: Icon(Icons.search_rounded, color: p.muted),
+                              isDense: true,
+                            ),
+                          ),
                         ),
-                        Text(monthLabel(_month), style: const TextStyle(fontWeight: FontWeight.w700)),
-                        IconButton(
-                          tooltip: 'Next month',
-                          icon: const Icon(Icons.chevron_right_rounded),
-                          onPressed: () => setState(() => _month = DateTime(_month.year, _month.month + 1)),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          tooltip: 'Filters',
+                          onPressed: () => _openFilters(txns.value ?? const []),
+                          icon: Badge(
+                            isLabelVisible: _filter.isActive,
+                            label: Text('${_filter.activeCount}'),
+                            child: const Icon(Icons.tune_rounded),
+                          ),
                         ),
                       ],
                     ),
-                    TextField(
-                      onChanged: _search,
-                      decoration: InputDecoration(
-                        hintText: 'Search transactions',
-                        prefixIcon: Icon(Icons.search_rounded, color: p.muted),
-                        isDense: true,
-                      ),
+                    _ActiveFilters(
+                      filter: _filter,
+                      partnerName: me.partner?.name ?? 'partner',
+                      onChanged: (f) => setState(() => _filter = f),
                     ),
                   ],
                 ),
@@ -126,26 +197,38 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   AsyncData(:final value) => RefreshIndicator(
                     onRefresh: () {
                       invalidateMoney(ref);
-                      return ref.refresh(transactionsProvider((_month, _query)).future);
+                      return ref.refresh(_source.future);
                     },
-                    child: value.isEmpty
-                        ? EmptyState(
-                            title: _query.isEmpty ? 'No transactions this month' : 'No matches',
-                            message: _query.isEmpty
-                                ? 'Log what you spend and earn, and you will both see it here.'
-                                : 'Nothing in ${monthLabel(_month)} matches "$_query".',
-                            actionLabel: _query.isEmpty ? 'Add expense' : null,
-                            onAction: _query.isEmpty ? () => context.push('/add') : null,
-                            mood: _query.isEmpty ? MascotMood.curious : MascotMood.idle,
-                          )
-                        : _GroupedList(
-                            value,
-                            // Transfers aren't editable; their goal is where they live.
-                            onEdit: (t) => t.isTransfer || t.isRelease ? context.go('/goals') : context.push('/add', extra: t),
-                            onDelete: _delete,
-                          ),
+                    child: switch (_filter.apply(value, me.user.id)) {
+                      final shown when shown.isEmpty && value.isNotEmpty => EmptyState(
+                        title: 'No matches',
+                        message: 'Nothing fits these filters.',
+                        actionLabel: 'Clear filters',
+                        onAction: () => setState(() => _filter = TxnFilter.none),
+                      ),
+                      final shown when shown.isNotEmpty => _GroupedList(
+                        shown,
+                        filtered: _filter.isActive || range != null || _query.isNotEmpty,
+                        // Transfers aren't editable; their goal is where they live.
+                        onEdit: (t) => t.isTransfer || t.isRelease ? context.go('/goals') : context.push('/add', extra: t),
+                        onDelete: _delete,
+                      ),
+                      _ => EmptyState(
+                        title: _query.isNotEmpty
+                            ? 'No matches'
+                            : range != null
+                            ? 'Nothing in these dates'
+                            : 'No transactions this month',
+                        message: _query.isNotEmpty
+                            ? 'Nothing in ${range == null ? monthLabel(_month) : _rangeLabel(range)} matches "$_query".'
+                            : 'Log what you spend and earn, and you will both see it here.',
+                        actionLabel: _query.isEmpty ? 'Add expense' : null,
+                        onAction: _query.isEmpty ? () => context.push('/add') : null,
+                        mood: _query.isEmpty && range == null ? MascotMood.curious : MascotMood.idle,
+                      ),
+                    },
                   ),
-                  AsyncError(:final error) => ErrorRetry(error: error, onRetry: () => ref.invalidate(transactionsProvider)),
+                  AsyncError(:final error) => ErrorRetry(error: error, onRetry: () => ref.invalidate(_source)),
                   _ => const SkeletonList(),
                 },
               ),
@@ -157,10 +240,15 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 }
 
+String _rangeLabel(DateTimeRange r) => '${shortDate(r.start)} – ${shortDate(r.end)}';
+
 class _GroupedList extends StatelessWidget {
-  const _GroupedList(this.txns, {required this.onEdit, required this.onDelete});
+  const _GroupedList(this.txns, {required this.onEdit, required this.onDelete, this.filtered = false});
 
   final List<Txn> txns;
+
+  /// Showing a search, filter or custom range rather than the whole month.
+  final bool filtered;
   final ValueChanged<Txn> onEdit;
   final ValueChanged<Txn> onDelete;
 
@@ -193,11 +281,20 @@ class _GroupedList extends StatelessWidget {
                 HeroProgress(income <= 0 ? (expense > 0 ? 1 : 0) : expense / income),
                 const SizedBox(height: 8),
                 Text(
-                  income >= expense ? '${peso(income - expense)} left over this month' : '${peso(expense - income)} more out than in',
+                  income >= expense
+                      ? '${peso(income - expense)} left over ${filtered ? 'in these results' : 'this month'}'
+                      : '${peso(expense - income)} more out than in',
                   style: const TextStyle(color: Color(0xDDFFFFFF), fontSize: 12.5),
                 ),
               ],
             ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 14, 4, 0),
+          child: Text(
+            '${txns.length} ${txns.length == 1 ? 'transaction' : 'transactions'} · ${peso(expense)} out',
+            style: TextStyle(color: p.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
           ),
         ),
         for (final (i, entry) in byDay.entries.indexed) ...[
@@ -279,6 +376,162 @@ class _HeroFigure extends StatelessWidget {
           style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
         ),
       ],
+    );
+  }
+}
+
+/// Removable chips for each active filter; nothing when none are on.
+class _ActiveFilters extends StatelessWidget {
+  const _ActiveFilters({required this.filter, required this.partnerName, required this.onChanged});
+
+  final TxnFilter filter;
+  final String partnerName;
+  final ValueChanged<TxnFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!filter.isActive) return const SizedBox.shrink();
+    const kindLabels = {TxnKind.expense: 'Expenses', TxnKind.income: 'Income', TxnKind.savings: 'Savings'};
+    final chips = <(String, TxnFilter)>[
+      for (final k in filter.kinds) (kindLabels[k]!, filter.copyWith(kinds: {...filter.kinds}..remove(k))),
+      for (final c in filter.categories) (categoryStyle(c).label, filter.copyWith(categories: {...filter.categories}..remove(c))),
+      if (filter.payer != Payer.anyone)
+        (filter.payer == Payer.me ? 'Paid by me' : 'Paid by $partnerName', filter.copyWith(payer: Payer.anyone)),
+      if (filter.split != SplitFilter.any)
+        (filter.split == SplitFilter.shared ? 'Shared' : 'Personal', filter.copyWith(split: SplitFilter.any)),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SizedBox(
+        height: 36,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final (label, without) in chips)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InputChip(
+                  label: Text(label),
+                  onDeleted: () => onChanged(without),
+                  deleteButtonTooltipMessage: 'Remove $label',
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            TextButton(onPressed: () => onChanged(TxnFilter.none), child: const Text('Clear all')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Type, who paid, shared or personal, and categories, with a live count.
+class _FilterSheet extends ConsumerStatefulWidget {
+  const _FilterSheet({required this.initial, required this.base});
+
+  final TxnFilter initial;
+
+  /// The period's transactions, to count matches as filters change.
+  final List<Txn> base;
+
+  @override
+  ConsumerState<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends ConsumerState<_FilterSheet> {
+  late TxnFilter _f = widget.initial;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pn;
+    final me = ref.watch(meProvider);
+    final partner = me.partner;
+    final count = _f.apply(widget.base, me.user.id).length;
+    Widget label(String text) => Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(color: p.muted, fontWeight: FontWeight.w700, fontSize: 12.5),
+      ),
+    );
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 12, 0),
+              child: Row(
+                children: [
+                  Expanded(child: Text('Filters', style: Theme.of(context).textTheme.titleLarge)),
+                  TextButton(onPressed: () => setState(() => _f = TxnFilter.none), child: const Text('Reset')),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                children: [
+                  label('TYPE'),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final (kind, text) in [(TxnKind.expense, 'Expenses'), (TxnKind.income, 'Income'), (TxnKind.savings, 'Savings')])
+                        FilterChip(
+                          label: Text(text),
+                          selected: _f.kinds.contains(kind),
+                          onSelected: (on) =>
+                              setState(() => _f = _f.copyWith(kinds: on ? {..._f.kinds, kind} : ({..._f.kinds}..remove(kind)))),
+                        ),
+                    ],
+                  ),
+                  if (partner != null) ...[
+                    label('PAID BY'),
+                    PillTabs(
+                      labels: ['Anyone', 'Me', partner.name],
+                      index: _f.payer.index,
+                      onChanged: (i) => setState(() => _f = _f.copyWith(payer: Payer.values[i])),
+                    ),
+                  ],
+                  label('SHARED OR PERSONAL'),
+                  PillTabs(
+                    labels: const ['Any', 'Shared', 'Personal'],
+                    index: _f.split.index,
+                    onChanged: (i) => setState(() => _f = _f.copyWith(split: SplitFilter.values[i])),
+                  ),
+                  label('CATEGORY'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final c in expenseCategories)
+                        FilterChip(
+                          avatar: Icon(c.icon, size: 16, color: c.color),
+                          label: Text(c.label),
+                          selected: _f.categories.contains(c.key),
+                          onSelected: (on) => setState(
+                            () => _f = _f.copyWith(categories: on ? {..._f.categories, c.key} : ({..._f.categories}..remove(c.key))),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context, _f),
+                child: Text(count == 1 ? 'Show 1 result' : 'Show $count results'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -195,6 +195,11 @@ final transactionsProvider = FutureProvider.family<List<Txn>, (DateTime, String)
   (ref, args) => ref.watch(repositoryProvider).transactions(month: args.$1, query: args.$2),
 );
 
+/// Transactions between two days (inclusive), for Activity's custom range.
+final transactionsRangeProvider = FutureProvider.family<List<Txn>, (DateTime, DateTime, String)>(
+  (ref, args) => ref.watch(repositoryProvider).transactions(from: args.$1, to: args.$2, query: args.$3),
+);
+
 final budgetProvider = FutureProvider.family<BudgetSummary, DateTime>(
   (ref, month) => ref.watch(repositoryProvider).budget(monthStart(month)),
 );
@@ -226,6 +231,7 @@ final _moneyProviders = <ProviderOrFamily>[
   dashboardProvider,
   feedProvider,
   transactionsProvider,
+  transactionsRangeProvider,
   budgetProvider,
   billsProvider,
   balanceProvider,

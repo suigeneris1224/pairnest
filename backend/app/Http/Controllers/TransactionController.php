@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,7 +17,15 @@ class TransactionController extends Controller
             'month' => ['nullable', 'date_format:Y-m'],
             'q' => ['nullable', 'string', 'max:100'],
             'type' => ['nullable', Rule::in(Transaction::TYPES)],
+            'from' => ['nullable', 'date_format:Y-m-d', 'required_with:to'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'required_with:from', 'after_or_equal:from'],
+            // Activity loads a whole month or range at once; keep pages for other callers.
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
         ]);
+        if (isset($filters['from'], $filters['to'])
+            && CarbonImmutable::parse($filters['from'])->diffInDays(CarbonImmutable::parse($filters['to'])) > 366) {
+            throw ValidationException::withMessages(['to' => 'Pick a range of a year or less.']);
+        }
 
         $query = $request->user()->couple->transactions()
             ->with('user:id,name')
@@ -31,8 +40,11 @@ class TransactionController extends Controller
         if ($type = $filters['type'] ?? null) {
             $query->where('type', $type);
         }
+        if (isset($filters['from'], $filters['to'])) {
+            $query->whereBetween('occurred_on', [$filters['from'], $filters['to']]);
+        }
 
-        return response()->json($query->paginate(30));
+        return response()->json($query->paginate($filters['per_page'] ?? 30));
     }
 
     public function store(Request $request): JsonResponse

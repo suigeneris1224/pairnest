@@ -623,4 +623,84 @@ void main() {
     expect(find.text('Japan Trip is back'), findsOneWidget);
     expect(find.text('Cancelled goals (1)'), findsNothing);
   });
+
+  testWidgets('Activity filters by category, payer and type, with matching totals', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/activity');
+    await _settle(tester);
+    expect(find.text('Electricity Bill'), findsOneWidget);
+
+    // Sam's food only.
+    await tester.tap(find.byTooltip('Filters'));
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(FilterChip, 'Food & Dining'));
+    await tester.tap(find.text('Sam').last);
+    await tester.pump();
+    await tester.tap(find.text('Show 1 result'));
+    await _settle(tester);
+    expect(find.text('Groceries'), findsOneWidget);
+    expect(find.text('Electricity Bill'), findsNothing);
+    expect(find.text('1 transaction · ₱1,250 out'), findsOneWidget);
+    expect(find.textContaining('left over in these results'), findsNothing, reason: 'more out than in');
+
+    // Removing a chip widens the results again.
+    // The chip row scrolls sideways; bring the chip's ✕ into view first.
+    await tester.ensureVisible(find.widgetWithText(InputChip, 'Paid by Sam'));
+    await _settle(tester);
+    await tester.tap(find.descendant(of: find.widgetWithText(InputChip, 'Paid by Sam'), matching: find.byType(Icon)).last);
+    await _settle(tester);
+    expect(find.text('2 transactions · ₱5,050 out'), findsOneWidget, reason: 'both food entries');
+
+    // Income only: just the salary, nothing out.
+    await tester.tap(find.byTooltip('Filters'));
+    await _settle(tester);
+    await tester.tap(find.text('Reset'));
+    await tester.tap(find.widgetWithText(FilterChip, 'Income'));
+    await tester.pump();
+    await tester.tap(find.text('Show 1 result'));
+    await _settle(tester);
+    expect(find.text('Salary'), findsOneWidget);
+    expect(find.text('1 transaction · ₱0 out'), findsOneWidget);
+
+    // Nothing matches: income in the food category.
+    await tester.tap(find.byTooltip('Filters'));
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(FilterChip, 'Food & Dining'));
+    await tester.pump();
+    await tester.tap(find.text('Show 0 results'));
+    await _settle(tester);
+    expect(find.text('No matches'), findsOneWidget);
+    await tester.tap(find.text('Clear filters'));
+    await _settle(tester);
+    expect(find.text('Electricity Bill'), findsOneWidget);
+  });
+
+  testWidgets('a custom date range spans months', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    final now = DateTime.now();
+    final lastMonth = DateTime(now.year, now.month - 1, 15);
+    await resolve(
+      repo.addTransaction(
+        TxnDraft(
+          type: 'expense',
+          amount: 640,
+          category: 'food',
+          title: 'Old dinner',
+          paymentMethod: 'cash',
+          isSplit: true,
+          occurredOn: lastMonth,
+        ),
+      ),
+    );
+    final thisMonth = await resolve(container.read(transactionsProvider((monthStart(now), '')).future));
+    expect(thisMonth.map((t) => t.title), isNot(contains('Old dinner')));
+    final range = await resolve(container.read(transactionsRangeProvider((DateTime(now.year, now.month - 1, 1), now, '')).future));
+    expect(range.map((t) => t.title), containsAll(['Old dinner', 'Weekly groceries']));
+  });
 }

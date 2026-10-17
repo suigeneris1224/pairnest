@@ -165,10 +165,16 @@ class ApiRepository implements PairnestRepository {
       _call(() async => [for (final f in (await _dio.get('feed')).data as List) FeedItem.fromJson(f as Map<String, dynamic>)]);
 
   @override
-  Future<List<Txn>> transactions({DateTime? month, String query = ''}) => _call(() async {
+  Future<List<Txn>> transactions({DateTime? month, DateTime? from, DateTime? to, String query = ''}) => _call(() async {
     final res = await _dio.get(
       'transactions',
-      queryParameters: {if (month != null) 'month': monthKey(month), if (query.trim().isNotEmpty) 'q': query.trim()},
+      queryParameters: {
+        if (month != null) 'month': monthKey(month),
+        if (from != null && to != null) ...{'from': dayKey(from), 'to': dayKey(to)},
+        if (query.trim().isNotEmpty) 'q': query.trim(),
+        // The whole period at once, so totals and filters see everything.
+        'per_page': 500,
+      },
     );
     return [for (final t in res.data['data'] as List) Txn.fromJson(t as Map<String, dynamic>)];
   });
