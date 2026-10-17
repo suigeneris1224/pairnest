@@ -1,0 +1,44 @@
+# Pairnest on one host: Flutter web at /, Laravel API at /api.
+# setup.sh replaces __SERVER_NAME__ and installs this as
+# /etc/nginx/sites-available/pairnest. Certbot adds the HTTPS block.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __SERVER_NAME__;
+
+    root /var/www/pairnest/current/web;
+    index index.html;
+    client_max_body_size 5m;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Laravel API: every /api/* request goes to the front controller.
+    location ^~ /api/ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME /var/www/pairnest/current/backend/public/index.php;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_param DOCUMENT_ROOT /var/www/pairnest/current/backend/public;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_read_timeout 30s;
+    }
+
+    # Never cache the app shell so new deploys show up immediately.
+    location = /index.html { add_header Cache-Control "no-cache"; }
+    location = /flutter_service_worker.js { add_header Cache-Control "no-cache"; }
+    location = /flutter_bootstrap.js { add_header Cache-Control "no-cache"; }
+
+    location ~* \.(js|wasm|css|png|jpg|svg|ico|ttf|otf|woff2?|json)$ {
+        expires 1h;
+        try_files $uri =404;
+    }
+
+    # Flutter web routes are client-side.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~ /\. { deny all; }
+}
