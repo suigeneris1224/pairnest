@@ -7,7 +7,7 @@ import '../../core/format.dart';
 import '../../core/mascot/mascot.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
-import '../../core/widgets/member_colors.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 
@@ -101,7 +101,6 @@ class _PromptCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final couple = ref.watch(meProvider).couple;
     return HeroCard(
       tint: Pastel.lavender.deep,
       padding: const EdgeInsets.all(22),
@@ -126,7 +125,7 @@ class _PromptCard extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    PartnerAvatar(name: a.userName, color: memberColor(context, couple, a.userId), size: 30),
+                    MemberAvatar(userId: a.userId, name: a.userName, size: 30),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Container(
@@ -231,7 +230,6 @@ class _PastTalkTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = context.pn;
-    final couple = ref.watch(meProvider).couple;
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
@@ -246,7 +244,7 @@ class _PastTalkTile extends ConsumerWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  PartnerAvatar(name: a.userName, color: memberColor(context, couple, a.userId), size: 26),
+                  MemberAvatar(userId: a.userId, name: a.userName, size: 26),
                   const SizedBox(width: 10),
                   Expanded(child: Text(a.answer, style: const TextStyle(height: 1.4))),
                 ],

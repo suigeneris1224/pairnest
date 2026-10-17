@@ -38,6 +38,7 @@ class UsScreen extends ConsumerWidget {
                     const SizedBox(height: 12),
                     CoupleAvatars(
                       names: [for (final m in couple.members) m.name],
+                      userIds: [for (final m in couple.members) m.id],
                       colors: [for (final m in couple.members) memberColor(context, couple, m.id)],
                       size: 40,
                     ),

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import '../core/format.dart';
 import '../core/onboarding_options.dart';
@@ -19,6 +20,7 @@ class MockRepository implements PairnestRepository {
   Member _user = const Member(id: 1, name: 'Alex');
   static const _sam = Member(id: 2, name: 'Sam');
   OnboardingProfile _profile = const OnboardingProfile();
+  final _avatars = <int, Uint8List>{};
   Couple? _couple;
   int _nextId = 100;
 
@@ -228,6 +230,29 @@ class MockRepository implements PairnestRepository {
     if (partner == null) throw Exception('Your partner needs to join before you can re-link their phone.');
     return (code: 'QX4M7KDP', expiresAt: DateTime.now().add(const Duration(minutes: 10)), forName: partner.name);
   });
+
+  @override
+  Future<Me> uploadAvatar(Uint8List bytes, String filename) => _delay(() {
+    _avatars[_user.id] = bytes;
+    return _setUser(Member(id: _user.id, name: _user.name, avatarVersion: DateTime.now().millisecondsSinceEpoch));
+  });
+
+  @override
+  Future<Me> removeAvatar() => _delay(() {
+    _avatars.remove(_user.id);
+    return _setUser(Member(id: _user.id, name: _user.name));
+  });
+
+  @override
+  Future<Uint8List?> avatar(int userId) => _delay(() => _avatars[userId]);
+
+  /// Swaps in the updated signed-in member, in the couple too.
+  Me _setUser(Member user) {
+    _user = user;
+    final couple = _couple;
+    if (couple != null) _couple = couple.copyWith(members: [for (final m in couple.members) m.id == user.id ? user : m]);
+    return _me = Me(user: _user, couple: _couple, partnerName: _me?.partnerName);
+  }
 
   @override
   Future<String> newRecoveryKey() => _delay(() => 'P3RN-8VBC-M2TQ-W6HJ');

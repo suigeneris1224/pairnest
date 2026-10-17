@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'models.dart';
 
 /// Everything the app needs from the backend. [MockRepository] serves
@@ -21,6 +23,13 @@ abstract class PairnestRepository {
 
   /// "Remove this phone."
   Future<void> logout();
+
+  /// Your profile photo; only you and your partner can see it.
+  Future<Me> uploadAvatar(Uint8List bytes, String filename);
+  Future<Me> removeAvatar();
+
+  /// A member's photo, or null if they have none.
+  Future<Uint8List?> avatar(int userId);
   Future<Me> createNest(String theme);
   Future<Me> joinNest(String code);
   Future<void> updateTheme(String theme);

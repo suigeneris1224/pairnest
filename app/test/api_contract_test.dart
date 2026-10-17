@@ -3,6 +3,8 @@
 //
 //   php artisan migrate:fresh --seed && php artisan serve --port=8800
 //   flutter test test/api_contract_test.dart --dart-define=API_URL=http://127.0.0.1:8800/api/v1
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pairnest/data/api_repository.dart';
@@ -143,6 +145,16 @@ void main() {
     await robin.createNest('sage');
     expect((await robin.goals()).map((g) => g.name), unorderedEquals(['Emergency Fund', 'Travel Fund', 'Baby Fund']));
     expect((await robin.budget(month)).total, 25000);
+
+    // Profile photos: the partner sees a re-encoded JPEG; anyone else gets nothing.
+    final png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAE0lEQVR4nGMM6ElhgAEmOAsvBwA/cAFIjcJkMQAAAABJRU5ErkJggg==');
+    final withPhoto = await alex.uploadAvatar(png, 'me.png');
+    expect(withPhoto.user.avatarVersion, isNotNull);
+    final seen = await sam.avatar(withPhoto.user.id);
+    expect(seen!.sublist(0, 2), [0xFF, 0xD8], reason: 'served as JPEG');
+    expect(await robin.avatar(withPhoto.user.id), isNull);
+    expect((await alex.removeAvatar()).user.avatarVersion, isNull);
+    expect(await sam.avatar(withPhoto.user.id), isNull);
 
     // Activity loads the whole month (no 30-item cut-off) and custom ranges.
     final day = DateTime(month.year, month.month, 1);

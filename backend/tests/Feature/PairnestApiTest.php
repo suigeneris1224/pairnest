@@ -6,6 +6,8 @@ use App\Models\Couple;
 use App\Models\User;
 use Database\Seeders\ConversationPromptSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -586,5 +588,41 @@ class PairnestApiTest extends TestCase
         $this->getJson('/api/v1/transactions?from=2028-03-10&to=2028-02-01')->assertUnprocessable();
         $this->getJson('/api/v1/transactions?from=2027-01-01&to=2028-06-30')->assertUnprocessable();
         $this->getJson('/api/v1/transactions?per_page=501')->assertUnprocessable();
+    }
+    public function test_profile_photos_are_private_to_the_couple(): void
+    {
+        Storage::fake('local');
+        [, $alex, $sam] = $this->pair();
+        [, $other] = $this->pair();
+
+        Sanctum::actingAs($alex);
+        $this->postJson('/api/v1/me/avatar', ['photo' => UploadedFile::fake()->create('notes.pdf', 10, 'application/pdf')])->assertUnprocessable();
+        $first = $this->postJson('/api/v1/me/avatar', ['photo' => UploadedFile::fake()->image('me.png', 900, 600)])
+            ->assertOk()
+            ->assertJsonMissingPath('user.avatar_path')
+            ->json('user.avatar_version');
+        $this->assertNotNull($first);
+        $path = $alex->fresh()->avatar_path;
+        Storage::disk('local')->assertExists($path);
+        [$w, $h, $type] = getimagesizefromstring(Storage::disk('local')->get($path));
+        $this->assertSame([512, 512, IMAGETYPE_JPEG], [$w, $h, $type]);
+
+        Sanctum::actingAs($sam);
+        $this->get("/api/v1/members/{$alex->id}/avatar")->assertOk()->assertHeader('Content-Type', 'image/jpeg');
+        $this->getJson('/api/v1/couple')->assertJsonPath('couple.members.0.avatar_version', $first);
+        $this->get("/api/v1/members/{$sam->id}/avatar")->assertNotFound();
+
+        Sanctum::actingAs($other);
+        $this->get("/api/v1/members/{$alex->id}/avatar")->assertNotFound();
+
+        Sanctum::actingAs($alex);
+        $this->travel(2)->seconds();
+        $second = $this->postJson('/api/v1/me/avatar', ['photo' => UploadedFile::fake()->image('new.jpg', 400, 800)])->json('user.avatar_version');
+        $this->assertNotSame($first, $second);
+        Storage::disk('local')->assertMissing($path);
+
+        $this->deleteJson('/api/v1/me/avatar')->assertOk()->assertJsonPath('user.avatar_version', null);
+        $this->get("/api/v1/members/{$alex->id}/avatar")->assertNotFound();
+        $this->assertCount(0, Storage::disk('local')->allFiles('avatars'));
     }
 }

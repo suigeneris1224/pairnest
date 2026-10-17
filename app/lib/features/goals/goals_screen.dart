@@ -446,6 +446,7 @@ class _GoalCard extends ConsumerWidget {
                         if (contributors.isNotEmpty)
                           CoupleAvatars(
                             names: [for (final m in contributors) m.name],
+                            userIds: [for (final m in contributors) m.id],
                             colors: [for (final m in contributors) memberColor(context, couple, m.id)],
                             size: 26,
                           ),

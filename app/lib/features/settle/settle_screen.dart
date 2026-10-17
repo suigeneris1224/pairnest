@@ -8,6 +8,7 @@ import '../../core/mascot/mascot.dart';
 import '../../core/motion/motion.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/member_colors.dart';
 import '../../core/widgets/nest_ui.dart';
 import '../../data/models.dart';
@@ -184,7 +185,7 @@ class _WhoPaidCard extends ConsumerWidget {
           for (final m in balance.members) ...[
             Row(
               children: [
-                PartnerAvatar(name: m.name, color: memberColor(context, me.couple, m.id), size: 30),
+                MemberAvatar(userId: m.id, name: m.name, size: 30),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(m.id == me.user.id ? '${m.name} (you)' : m.name, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -349,7 +350,7 @@ class _Person extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      PartnerAvatar(name: member.name, color: color, size: 48),
+      MemberAvatar(userId: member.id, name: member.name, size: 48),
       const SizedBox(height: 6),
       Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
     ],

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -125,6 +127,27 @@ class ApiRepository implements PairnestRepository {
       forName: (data['for'] ?? '') as String,
     );
   });
+
+  @override
+  Future<Me> uploadAvatar(Uint8List bytes, String filename) => _call(() async {
+    final form = FormData.fromMap({'photo': MultipartFile.fromBytes(bytes, filename: filename)});
+    final res = await _dio.post('me/avatar', data: form);
+    return Me.fromJson(res.data['user'] as Map<String, dynamic>);
+  });
+
+  @override
+  Future<Me> removeAvatar() => _call(() async => Me.fromJson((await _dio.delete('me/avatar')).data['user'] as Map<String, dynamic>));
+
+  @override
+  Future<Uint8List?> avatar(int userId) async {
+    try {
+      final res = await _dio.get<List<int>>('members/$userId/avatar', options: Options(responseType: ResponseType.bytes));
+      return res.data == null ? null : Uint8List.fromList(res.data!);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      throw Exception(_message(e));
+    }
+  }
 
   @override
   Future<String> newRecoveryKey() => _call(() async => (await _dio.post('auth/recovery-key')).data['recovery_key'] as String);

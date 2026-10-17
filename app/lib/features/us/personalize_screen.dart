@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/format.dart';
 import '../../core/widgets/nest_ui.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../../data/providers.dart';
 import '../onboarding/recovery_key_screen.dart';
 import '../theme_select/theme_select_screen.dart';
@@ -132,13 +135,11 @@ class _Settings extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
             children: [
+              const _MyPhotoTile(),
               ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: Text(me.user.name),
-                subtitle: const Text('Anonymous: no email, no password'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.favorite_outline_rounded),
+                leading: me.partner == null
+                    ? const Icon(Icons.favorite_outline_rounded)
+                    : MemberAvatar(userId: me.partner!.id, name: me.partner!.name, size: 40),
                 title: Text(me.partner?.name ?? 'No partner yet'),
                 subtitle: Text(me.partner == null ? 'Share your invite code below' : 'Your partner'),
               ),
@@ -291,6 +292,119 @@ class _CodeSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Your name and photo; tap to choose, take or remove a photo.
+class _MyPhotoTile extends ConsumerStatefulWidget {
+  const _MyPhotoTile();
+
+  @override
+  ConsumerState<_MyPhotoTile> createState() => _MyPhotoTileState();
+}
+
+class _MyPhotoTileState extends ConsumerState<_MyPhotoTile> {
+  bool _busy = false;
+
+  Future<void> _change() async {
+    final me = ref.read(meProvider);
+    final hasPhoto = me.user.avatarVersion != null;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose photo'),
+              onTap: () => Navigator.pop(sheet, 'gallery'),
+            ),
+            if (!kIsWeb)
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Take photo'),
+                onTap: () => Navigator.pop(sheet, 'camera'),
+              ),
+            if (hasPhoto)
+              ListTile(
+                leading: Icon(Icons.delete_outline_rounded, color: Theme.of(sheet).colorScheme.error),
+                title: const Text('Remove photo'),
+                onTap: () => Navigator.pop(sheet, 'remove'),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text(
+                'Only you and ${me.partner?.name ?? 'your partner'} can see your photo. Location data is removed.',
+                style: TextStyle(color: sheet.pn.muted, fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    final repo = ref.read(repositoryProvider);
+    final session = ref.read(sessionProvider.notifier);
+    try {
+      if (choice == 'remove') {
+        setState(() => _busy = true);
+        session.updateMe(await repo.removeAvatar());
+        if (mounted) showSnack(context, 'Photo removed');
+      } else {
+        final bytes = await ref.read(photoPickerProvider)(choice == 'camera' ? ImageSource.camera : ImageSource.gallery);
+        if (bytes == null || !mounted) return;
+        setState(() => _busy = true);
+        session.updateMe(await repo.uploadAvatar(bytes, 'photo.jpg'));
+        if (mounted) showSnack(context, 'Photo updated');
+      }
+    } catch (e) {
+      if (mounted) showSnack(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pn;
+    final me = ref.watch(meProvider);
+    return ListTile(
+      onTap: _busy ? null : _change,
+      leading: Tooltip(
+        message: 'Change your photo',
+        child: SizedBox.square(
+          dimension: 52,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              MemberAvatar(userId: me.user.id, name: me.user.name, size: 52),
+              if (_busy)
+                const Positioned.fill(
+                  child: Padding(padding: EdgeInsets.all(14), child: CircularProgressIndicator(strokeWidth: 2.5)),
+                ),
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: p.primaryDeep,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: p.surface, width: 2),
+                  ),
+                  child: Icon(Icons.photo_camera_rounded, size: 12, color: p.onPrimary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      title: Text(me.user.name),
+      subtitle: Text(me.user.avatarVersion == null ? 'Add a photo · Anonymous: no email, no password' : 'Anonymous: no email, no password'),
     );
   }
 }

@@ -1,8 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pairnest/app.dart';
 import 'package:pairnest/core/format.dart';
+import 'package:pairnest/core/widgets/member_avatar.dart';
+import 'package:pairnest/core/mascot/mascot.dart';
 import 'package:pairnest/core/theme/palettes.dart';
 import 'package:pairnest/data/mock_repository.dart';
 import 'package:pairnest/data/models.dart';
@@ -15,6 +20,7 @@ Future<ProviderContainer> _pumpApp(
   Map<String, Object> prefs, {
   bool reducedMotion = false,
   MockRepository? repo,
+  List<Override> overrides = const [],
 }) async {
   SharedPreferences.setMockInitialValues(prefs);
   if (reducedMotion) {
@@ -32,6 +38,7 @@ Future<ProviderContainer> _pumpApp(
         prefsProvider.overrideWithValue(instance),
         useGoogleFontsProvider.overrideWithValue(false),
         repositoryProvider.overrideWithValue(repo ?? MockRepository(latency: Duration.zero)),
+        ...overrides,
       ],
       child: const PairnestApp(),
     ),
@@ -40,8 +47,8 @@ Future<ProviderContainer> _pumpApp(
   return ProviderScope.containerOf(tester.element(find.byType(PairnestApp)));
 }
 
-Future<ProviderContainer> _signedIn(WidgetTester tester, {MockRepository? repo}) async {
-  final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true}, repo: repo);
+Future<ProviderContainer> _signedIn(WidgetTester tester, {MockRepository? repo, List<Override> overrides = const []}) async {
+  final container = await _pumpApp(tester, {'onboarded': true, 'theme_chosen': true}, repo: repo, overrides: overrides);
   // Timers only fire while the fake clock is pumped, so pump before awaiting.
   final login = container.read(sessionProvider.notifier).recover(MockRepository.demoKey);
   await _settle(tester);
@@ -141,6 +148,7 @@ void main() {
     await _settle(tester);
     await tester.tap(find.text('Settings'));
     await _settle(tester);
+    await tester.scrollUntilVisible(find.text('Remove this phone'), 200, scrollable: find.byType(Scrollable).last);
     expect(find.text('Remove this phone'), findsOneWidget);
   });
 
@@ -341,6 +349,8 @@ void main() {
     }
 
     expect(find.text('ALEX & SAM'), findsOneWidget);
+    expect(find.text('Our Card'), findsOneWidget);
+    expect(find.text('pairnest'), findsNothing);
     expect(find.text('Shared Balance'), findsOneWidget);
     expect(find.text('₱14,220'), findsWidgets);
     final japanBefore = (await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').saved;
@@ -516,7 +526,7 @@ void main() {
     await _settle(tester);
     await tester.tap(find.text('Settings'));
     await _settle(tester);
-    expect(find.text('Anonymous: no email, no password'), findsOneWidget);
+    expect(find.textContaining('Anonymous: no email, no password'), findsOneWidget);
 
     await tester.tap(find.text('Re-link a phone'));
     await _settle(tester);
@@ -525,7 +535,7 @@ void main() {
     await tester.tap(find.text('Done'));
     await _settle(tester);
 
-    await tester.ensureVisible(find.text('Remove this phone'));
+    await tester.scrollUntilVisible(find.text('Remove this phone'), 200, scrollable: find.byType(Scrollable).last);
     await tester.tap(find.text('Remove this phone'));
     await _settle(tester);
     expect(find.text('Remove this phone?'), findsOneWidget);
@@ -702,5 +712,59 @@ void main() {
     expect(thisMonth.map((t) => t.title), isNot(contains('Old dinner')));
     final range = await resolve(container.read(transactionsRangeProvider((DateTime(now.year, now.month - 1, 1), now, '')).future));
     expect(range.map((t) => t.title), containsAll(['Old dinner', 'Weekly groceries']));
+  });
+
+  testWidgets('you can add and remove your profile photo', (tester) async {
+    // A 1×1 PNG stands in for the photo picker.
+    final png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAE0lEQVR4nGMM6ElhgAEmOAsvBwA/cAFIjcJkMQAAAABJRU5ErkJggg==');
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo, overrides: [photoPickerProvider.overrideWithValue((_) async => png)]);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    bool hasPhoto() => find
+        .byWidgetPredicate((w) => w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).image != null)
+        .evaluate()
+        .isNotEmpty;
+    expect(find.byType(MascotBadge), findsOneWidget);
+
+    container.read(routerProvider).go('/us/personalize');
+    await _settle(tester);
+    await tester.tap(find.text('Settings'));
+    await _settle(tester);
+    expect(hasPhoto(), isFalse);
+    await tester.tap(find.byTooltip('Change your photo'));
+    await _settle(tester);
+    expect(find.text('Remove photo'), findsNothing);
+    await tester.tap(find.text('Choose photo'));
+    await _settle(tester);
+
+    expect(find.text('Photo updated'), findsOneWidget);
+    expect(container.read(meProvider).user.avatarVersion, isNotNull);
+    expect(await resolve(repo.avatar(1)), png);
+    expect(hasPhoto(), isTrue);
+
+    // Home's badge shows photos instead of the birds.
+    container.read(routerProvider).go('/home');
+    await _settle(tester);
+    expect(find.byType(MascotBadge), findsNothing);
+    expect(find.descendant(of: find.byType(CoupleBadge), matching: find.byType(Image)), findsOneWidget);
+
+    // Remove it again.
+    container.read(routerProvider).go('/us/personalize');
+    await _settle(tester);
+    await tester.tap(find.text('Settings'));
+    await _settle(tester);
+    await tester.tap(find.byTooltip('Change your photo'));
+    await _settle(tester);
+    await tester.tap(find.text('Remove photo'));
+    await _settle(tester);
+    expect(find.text('Photo removed'), findsOneWidget);
+    expect(container.read(meProvider).user.avatarVersion, isNull);
+    container.read(routerProvider).go('/home');
+    await _settle(tester);
+    expect(find.byType(MascotBadge), findsOneWidget);
   });
 }

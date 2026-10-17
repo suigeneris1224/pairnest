@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../motion/motion.dart';
 import '../theme/palettes.dart';
+import 'member_avatar.dart';
 
 /// Rounded cream card with a soft shadow, the main surface in Pairnest.
 class PairnestCard extends StatelessWidget {
@@ -183,9 +184,12 @@ class PartnerAvatar extends StatelessWidget {
 
 /// Two overlapping avatars, used for "both of us" markers.
 class CoupleAvatars extends StatelessWidget {
-  const CoupleAvatars({super.key, required this.names, required this.colors, this.size = 28});
+  const CoupleAvatars({super.key, required this.names, required this.colors, this.size = 28, this.userIds});
 
   final List<String> names;
+
+  /// When given, each shows that member's photo if they have one.
+  final List<int>? userIds;
   final List<Color> colors;
   final double size;
 
@@ -199,7 +203,9 @@ class CoupleAvatars extends StatelessWidget {
           for (var i = 0; i < names.length; i++)
             Positioned(
               left: i * size * 0.6,
-              child: PartnerAvatar(name: names[i], color: colors[i % colors.length], size: size),
+              child: userIds == null
+                  ? PartnerAvatar(name: names[i], color: colors[i % colors.length], size: size)
+                  : MemberAvatar(userId: userIds![i], name: names[i], size: size),
             ),
         ],
       ),

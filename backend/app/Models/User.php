@@ -36,7 +36,12 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'recovery_key_hash',
+        'avatar_path',
+        'avatar_updated_at',
     ];
+
+    /** Changes whenever the photo does, so apps know to refetch; null without one. */
+    protected $appends = ['avatar_version'];
 
     protected function casts(): array
     {
@@ -44,7 +49,13 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'profile' => 'array',
+            'avatar_updated_at' => 'datetime',
         ];
+    }
+
+    public function getAvatarVersionAttribute(): ?int
+    {
+        return $this->avatar_path ? $this->avatar_updated_at?->getTimestampMs() : null;
     }
 
     public function couple(): BelongsTo

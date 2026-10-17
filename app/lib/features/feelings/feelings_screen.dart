@@ -9,6 +9,7 @@ import '../../core/format.dart';
 import '../../core/mascot/mascot.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/member_colors.dart';
 import '../../core/widgets/mood_face.dart';
 import '../../data/models.dart';
@@ -103,7 +104,6 @@ class _Recent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final couple = ref.watch(meProvider).couple;
     final p = context.pn;
     final recent = moods.take(30).toList();
     if (recent.isEmpty) {
@@ -126,7 +126,7 @@ class _Recent extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      PartnerAvatar(name: m.userName, color: memberColor(context, couple, m.userId), size: 40),
+                      MemberAvatar(userId: m.userId, name: m.userName, size: 40),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -199,7 +199,7 @@ class _Both extends ConsumerWidget {
                     return PairnestCard(
                       child: Column(
                         children: [
-                          PartnerAvatar(name: member.name, color: memberColor(context, me.couple, member.id), size: 44),
+                          MemberAvatar(userId: member.id, name: member.name, size: 44),
                           const SizedBox(height: 8),
                           Text(member.id == me.user.id ? 'You' : member.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 14),

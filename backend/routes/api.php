@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\BillController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CoupleController;
@@ -29,6 +30,9 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::post('auth/recovery-key', [AuthController::class, 'recoveryKey']);
+        Route::post('me/avatar', [AvatarController::class, 'store']);
+        Route::delete('me/avatar', [AvatarController::class, 'destroy']);
+        Route::get('members/{id}/avatar', [AvatarController::class, 'show'])->whereNumber('id');
 
         Route::get('couple', [CoupleController::class, 'show']);
         Route::post('couple', [CoupleController::class, 'store']);

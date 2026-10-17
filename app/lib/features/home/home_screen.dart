@@ -8,7 +8,7 @@ import '../../core/motion/motion.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/categories.dart';
 import '../../core/widgets/common.dart';
-import '../../core/widgets/member_colors.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/mood_face.dart';
 import '../../core/widgets/nest_ui.dart';
 import '../../data/models.dart';
@@ -75,7 +75,7 @@ class _Header extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const MascotBadge(size: 56),
+          const CoupleBadge(size: 56),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -207,7 +207,7 @@ class _FeedSheet extends ConsumerWidget {
                       leading: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          PartnerAvatar(name: item.userName, color: memberColor(context, couple, member?.id ?? -1), size: 40),
+                          MemberAvatar(userId: member?.id ?? -1, name: item.userName, size: 40),
                           Positioned(right: -4, bottom: -4, child: _FeedTypeBadge(item.type)),
                         ],
                       ),

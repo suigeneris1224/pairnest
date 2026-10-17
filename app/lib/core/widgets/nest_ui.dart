@@ -1271,7 +1271,7 @@ class SkeletonList extends StatelessWidget {
 // ─── Wallet card ───────────────────────────────────────────────────────────
 
 /// The couple's shared money as a Pairnest e-wallet card: palette gradient,
-/// wave pattern, chip, cardholder names and the two-bird mark. [child] is the
+/// wave pattern, chip and cardholder names. [child] is the
 /// balance in the middle; [strip] (optional) tucks under the card's bottom edge.
 class WalletCard extends StatefulWidget {
   const WalletCard({super.key, required this.child, required this.holder, required this.number, this.trailing, this.strip, this.onTap});
@@ -1376,16 +1376,7 @@ class _WalletCardState extends State<WalletCard> {
                       children: [
                         Row(
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: SizedBox.square(
-                                dimension: 28,
-                                // The icon art has wide margins; zoom in on the birds.
-                                child: Transform.scale(scale: 1.45, child: Image.asset('assets/brand/logo_icon_1024.png')),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text('pairnest', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: 0.2)),
+                            const Text('Our Card', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.2)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Align(alignment: Alignment.centerRight, child: widget.trailing),
@@ -1421,7 +1412,6 @@ class _WalletCardState extends State<WalletCard> {
                                 ],
                               ),
                             ),
-                            const _WalletMark(),
                           ],
                         ),
                       ],
@@ -1432,30 +1422,6 @@ class _WalletCardState extends State<WalletCard> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The card's own logo: the two birds side by side on a frosted pill.
-class _WalletMark extends StatelessWidget {
-  const _WalletMark();
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.pn;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(6, 3, 6, 2),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(14)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          MascotBird(size: 22, color: p.birdA),
-          Transform.translate(
-            offset: const Offset(-6, 0),
-            child: MascotBird(size: 22, color: p.birdB, faceRight: false),
-          ),
-        ],
       ),
     );
   }

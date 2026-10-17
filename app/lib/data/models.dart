@@ -3,12 +3,16 @@ double _num(Object? v) => v == null ? 0 : (v is num ? v.toDouble() : double.pars
 DateTime? _date(Object? v) => v == null ? null : DateTime.parse(v.toString()).toLocal();
 
 class Member {
-  const Member({required this.id, required this.name});
+  const Member({required this.id, required this.name, this.avatarVersion});
 
-  factory Member.fromJson(Map<String, dynamic> j) => Member(id: j['id'] as int, name: j['name'] as String);
+  factory Member.fromJson(Map<String, dynamic> j) =>
+      Member(id: j['id'] as int, name: j['name'] as String, avatarVersion: (j['avatar_version'] as num?)?.toInt());
 
   final int id;
   final String name;
+
+  /// Changes whenever their profile photo does; null when they have none.
+  final int? avatarVersion;
 }
 
 /// Onboarding answers. Only the name is required; everything here is optional.

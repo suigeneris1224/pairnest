@@ -303,4 +303,10 @@ void main() {
     });
     expect([release.isRelease, release.isTransfer, release.isExpense, release.isIncome], [true, false, false, false]);
   });
+
+  test('members carry a photo version only when they have a photo', () {
+    expect(Member.fromJson({'id': 1, 'name': 'Alex', 'avatar_version': 1760000000000}).avatarVersion, 1760000000000);
+    expect(Member.fromJson({'id': 2, 'name': 'Sam', 'avatar_version': null}).avatarVersion, isNull);
+    expect(Member.fromJson({'id': 3, 'name': 'Robin'}).avatarVersion, isNull);
+  });
 }

@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,6 +89,9 @@ class SessionNotifier extends AsyncNotifier<Me?> {
 
   Future<void> recover(String key) => _run(() => _repo.recover(key));
 
+  /// Replaces the signed-in user, e.g. after a new profile photo.
+  void updateMe(Me me) => state = AsyncData(me);
+
   Future<void> redeemRelink(String code) => _run(() => _repo.redeemRelink(code));
 
   Future<void> createNest() => _run(() => _repo.createNest(ref.read(themeProvider).id));
@@ -167,6 +173,18 @@ final hasDueRemindersProvider = Provider<bool>((ref) {
   final seen = ref.watch(feedSeenProvider);
   final now = DateTime.now();
   return seen == null || seen.isBefore(DateTime(now.year, now.month, now.day));
+});
+
+/// A member's photo bytes, keyed by its version so a new photo is refetched
+/// and an unchanged one stays cached.
+final avatarProvider = FutureProvider.family<Uint8List?, (int, int)>((ref, key) => ref.watch(repositoryProvider).avatar(key.$1));
+
+/// Picks a photo from the gallery or camera; overridden in tests.
+final photoPickerProvider = Provider<Future<Uint8List?> Function(ImageSource source)>((ref) {
+  return (source) async {
+    final file = await ImagePicker().pickImage(source: source, maxWidth: 1024, imageQuality: 85);
+    return file?.readAsBytes();
+  };
 });
 
 /// Lets app events make the Home and Us birds react (glance, cheer, celebrate).
