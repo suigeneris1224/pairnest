@@ -1,0 +1,13 @@
+# Local tool settings
+.claude/settings.local.json
+
+# OS clutter
+.DS_Store
+Thumbs.db
+*.log
+
+# Secrets and local databases never belong in the repo
+*.env
+.env.*
+!.env.example
+**/*.sqlite*

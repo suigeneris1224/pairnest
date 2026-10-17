@@ -1,0 +1,5 @@
+# Normalise line endings in the repo; shell scripts run on Linux servers.
+* text=auto
+*.sh text eol=lf
+*.png binary
+*.jpg binary
