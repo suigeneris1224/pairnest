@@ -641,8 +641,6 @@ class _DashboardBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 14),
-        FadeSlideIn(index: 2, child: _WalletsRow(data.wallets)),
-        const SizedBox(height: 14),
         FadeSlideIn(
           index: 2,
           child: SectionCard(
@@ -652,20 +650,21 @@ class _DashboardBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 14),
+        // Money plans side by side, then the two of you.
         FadeSlideIn(
           index: 3,
-          child: _TwoUp(left: const _GoalsPeek(), right: const _FeelsCard()),
+          child: _TwoUp(
+            left: const _GoalsPeek(),
+            right: _UpcomingCard(data.upcomingBills, hide: hide),
+          ),
         ),
         const SizedBox(height: 14),
         FadeSlideIn(
           index: 4,
-          child: _TwoUp(
-            left: _UpcomingCard(data.upcomingBills, hide: hide),
-            right: const QuoteCard(),
-            leftFlex: 3,
-            rightFlex: 2,
-          ),
+          child: _TwoUp(left: const _FeelsCard(), right: const QuoteCard()),
         ),
+        const SizedBox(height: 14),
+        FadeSlideIn(index: 5, child: _WalletsRow(data.wallets)),
       ],
     );
   }
@@ -705,12 +704,10 @@ class _DashboardBody extends ConsumerWidget {
 
 /// Two cards side by side, stacked on narrow phones.
 class _TwoUp extends StatelessWidget {
-  const _TwoUp({required this.left, required this.right, this.leftFlex = 1, this.rightFlex = 1});
+  const _TwoUp({required this.left, required this.right});
 
   final Widget left;
   final Widget right;
-  final int leftFlex;
-  final int rightFlex;
 
   @override
   Widget build(BuildContext context) {
@@ -720,9 +717,9 @@ class _TwoUp extends StatelessWidget {
           : Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: leftFlex, child: left),
+                Expanded(child: left),
                 const SizedBox(width: 12),
-                Expanded(flex: rightFlex, child: right),
+                Expanded(child: right),
               ],
             ),
     );

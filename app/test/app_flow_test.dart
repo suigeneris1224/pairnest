@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pairnest/app.dart';
 import 'package:pairnest/core/format.dart';
 import 'package:pairnest/core/widgets/member_avatar.dart';
+import 'package:pairnest/core/widgets/nest_ui.dart';
 import 'package:pairnest/core/mascot/mascot.dart';
 import 'package:pairnest/core/theme/palettes.dart';
 import 'package:pairnest/data/mock_repository.dart';
@@ -1034,6 +1035,9 @@ void main() {
   testWidgets('with no wallets yet, Home and the Wallets page invite you to add one', (tester) async {
     final container = await _signedIn(tester, repo: MockRepository(latency: Duration.zero, seed: false));
     await tester.scrollUntilVisible(find.text('Add your wallets'), 200, scrollable: find.byType(Scrollable).first);
+    // It's the last thing on Home; scroll it clear of the bottom bar.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+    await _settle(tester);
     await tester.tap(find.text('Add your wallets'));
     await _settle(tester);
     expect(container.read(routerProvider).state.uri.path, '/home/wallets');
@@ -1231,6 +1235,21 @@ void main() {
     await _settle(tester);
     expect(find.text('Top up Our Maya'), findsNothing);
     expect(find.textContaining('Moved ₱'), findsNothing, reason: 'closing moves nothing');
+  });
+
+  testWidgets('Home pairs Goals with Upcoming and Feels with the quote, wallets last', (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await _signedIn(tester);
+    double top(String text) => tester.getTopLeft(find.text(text)).dy;
+    double left(String text) => tester.getTopLeft(find.text(text)).dx;
+    expect(top('Savings Goals'), moreOrLessEquals(top('Upcoming'), epsilon: 1));
+    expect(left('Savings Goals'), lessThan(left('Upcoming')));
+    expect(top('Pairnest Feels'), greaterThan(top('Upcoming')));
+    expect(find.byType(QuoteCard), findsOneWidget);
+    expect(tester.getTopLeft(find.byType(QuoteCard)).dy, lessThan(top('Pairnest Feels') + 20));
+    expect(top('Wallets'), greaterThan(tester.getBottomLeft(find.byType(QuoteCard)).dy));
   });
 }
 
