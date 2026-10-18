@@ -52,22 +52,16 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
 
   /// Cancels after a check; the savings are released and Undo restores it.
   Future<void> _cancel(Goal goal) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: Text('Cancel ${goal.name}?'),
-        content: Text(
-          goal.saved > 0
-              ? 'The ${peso(goal.saved)} you saved will be released back to you. You can restore this goal anytime.'
-              : 'It will move to Cancelled goals. You can restore it anytime.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Keep goal')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Cancel goal')),
-        ],
-      ),
+    final ok = await confirmDialog(
+      context,
+      title: 'Cancel ${goal.name}?',
+      message: goal.saved > 0
+          ? 'The ${peso(goal.saved)} you saved will be released back to you. You can restore this goal anytime.'
+          : 'It will move to Cancelled goals. You can restore it anytime.',
+      keepLabel: 'Keep goal',
+      confirmLabel: 'Cancel goal',
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     final repo = ref.read(repositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
     final container = ProviderScope.containerOf(context, listen: false);

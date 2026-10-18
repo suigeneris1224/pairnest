@@ -219,18 +219,14 @@ class _Settings extends ConsumerWidget {
   }
 
   Future<void> _newKey(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: const Text('Make a new recovery key?'),
-        content: const Text('Your old recovery key will stop working.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Make new key')),
-        ],
-      ),
+    final ok = await confirmDialog(
+      context,
+      title: 'Make a new recovery key?',
+      message: 'Your old recovery key will stop working.',
+      keepLabel: 'Cancel',
+      confirmLabel: 'Make new key',
     );
-    if (ok != true || !context.mounted) return;
+    if (!ok || !context.mounted) return;
     try {
       final key = await ref.read(repositoryProvider).newRecoveryKey();
       if (!context.mounted) return;
@@ -249,18 +245,14 @@ class _Settings extends ConsumerWidget {
   }
 
   Future<void> _removePhone(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: const Text('Remove this phone?'),
-        content: const Text("Your nest stays safe, but to get back in you'll need your recovery key or a code from your partner's phone."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Remove')),
-        ],
-      ),
+    final ok = await confirmDialog(
+      context,
+      title: 'Remove this phone?',
+      message: "Your nest stays safe, but to get back in you'll need your recovery key or a code from your partner's phone.",
+      keepLabel: 'Cancel',
+      confirmLabel: 'Remove',
     );
-    if (ok == true) await ref.read(sessionProvider.notifier).logout();
+    if (ok) await ref.read(sessionProvider.notifier).logout();
   }
 }
 

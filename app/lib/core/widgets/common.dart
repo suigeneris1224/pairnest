@@ -274,6 +274,48 @@ class ErrorRetry extends StatelessWidget {
   }
 }
 
+/// Asks a yes/no question with the two buttons side by side; true when confirmed.
+Future<bool> confirmDialog(
+  BuildContext context, {
+  required String title,
+  String? message,
+  required String keepLabel,
+  required String confirmLabel,
+}) async {
+  // The theme's buttons are full width, which would stack AlertDialog actions.
+  const size = Size(0, 48);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: Text(title),
+      content: message == null ? null : Text(message),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      actions: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: size, padding: const EdgeInsets.symmetric(horizontal: 12)),
+                onPressed: () => Navigator.pop(dialog, false),
+                child: Text(keepLabel, textAlign: TextAlign.center, maxLines: 2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                style: FilledButton.styleFrom(minimumSize: size, padding: const EdgeInsets.symmetric(horizontal: 12)),
+                onPressed: () => Navigator.pop(dialog, true),
+                child: Text(confirmLabel, textAlign: TextAlign.center, maxLines: 2),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
 String friendlyError(Object error) {
   final text = error.toString();
   return text.startsWith('Exception: ') ? text.substring(11) : text;

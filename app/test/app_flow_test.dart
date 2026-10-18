@@ -599,6 +599,11 @@ void main() {
     await _settle(tester);
     expect(find.text('Cancel Japan Trip?'), findsOneWidget);
     expect(find.textContaining('₱12,000 you saved will be released'), findsOneWidget);
+    // Keep and Cancel sit side by side, Keep on the left.
+    final keep = tester.getCenter(find.text('Keep goal'));
+    final confirm = tester.getCenter(find.widgetWithText(FilledButton, 'Cancel goal'));
+    expect(keep.dy, moreOrLessEquals(confirm.dy, epsilon: 1));
+    expect(keep.dx, lessThan(confirm.dx));
     await tester.tap(find.widgetWithText(FilledButton, 'Cancel goal'));
     await _settle(tester);
 

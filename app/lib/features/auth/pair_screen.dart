@@ -37,18 +37,14 @@ class _PairScreenState extends ConsumerState<PairScreen> {
   }
 
   Future<void> _startOver(SessionNotifier session) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: const Text('Start over?'),
-        content: const Text("Your answers so far will be forgotten on this phone, and you'll go back to the start."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Start over')),
-        ],
-      ),
+    final ok = await confirmDialog(
+      context,
+      title: 'Start over?',
+      message: "Your answers so far will be forgotten on this phone, and you'll go back to the start.",
+      keepLabel: 'Cancel',
+      confirmLabel: 'Start over',
     );
-    if (ok == true) await _run(session.logout);
+    if (ok) await _run(session.logout);
   }
 
   @override

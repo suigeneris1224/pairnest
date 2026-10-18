@@ -34,17 +34,8 @@ class _PlannerScreenState extends ConsumerState<PlannerScreen> {
   }
 
   Future<void> _delete(Plan plan) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Remove "${plan.title}"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
-    );
-    if (ok != true) return;
+    final ok = await confirmDialog(context, title: 'Remove "${plan.title}"?', keepLabel: 'Keep', confirmLabel: 'Remove');
+    if (!ok) return;
     try {
       await ref.read(repositoryProvider).deletePlan(plan.id);
       ref.invalidate(plansProvider);
