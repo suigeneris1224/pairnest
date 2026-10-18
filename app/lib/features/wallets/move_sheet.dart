@@ -115,7 +115,7 @@ class _MoveSheetState extends State<_MoveSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle(title),
             const SizedBox(height: 4),
             Text("Moving money isn't spending. It just changes which wallet holds it.", style: TextStyle(color: p.muted, fontSize: 12.5)),
             const SizedBox(height: 16),

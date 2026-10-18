@@ -73,7 +73,7 @@ class _BalanceSheetState extends State<_BalanceSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Correct ${wallet.name}', style: Theme.of(context).textTheme.titleLarge),
+              SheetTitle('Correct ${wallet.name}'),
               const SizedBox(height: 6),
               Text(
                 wallet.isCredit
@@ -207,7 +207,7 @@ class _WalletEditorState extends ConsumerState<WalletEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_existing == null ? 'New wallet' : 'Edit wallet', style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle(_existing == null ? 'New wallet' : 'Edit wallet'),
             const SizedBox(height: 12),
             BankCard(preview, hide: false),
             const SizedBox(height: 16),

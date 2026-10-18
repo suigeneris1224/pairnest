@@ -320,7 +320,7 @@ class _BillEditorState extends ConsumerState<BillEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_existing == null ? 'New bill' : 'Edit bill', style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle(_existing == null ? 'New bill' : 'Edit bill'),
             const SizedBox(height: 16),
             TextField(
               controller: _title,

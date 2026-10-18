@@ -312,7 +312,7 @@ class _BudgetEditorState extends ConsumerState<_BudgetEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Budget for ${monthLabel(widget.month)}', style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle('Budget for ${monthLabel(widget.month)}'),
             const SizedBox(height: 16),
             TextField(
               controller: _total,

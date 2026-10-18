@@ -139,7 +139,7 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Transfer to a goal', style: Theme.of(context).textTheme.titleLarge),
+                SheetTitle('Transfer to a goal'),
                 const SizedBox(height: 10),
                 Text('Create a savings goal first, then move money into it from here.', style: TextStyle(color: p.muted, height: 1.4)),
                 const SizedBox(height: 18),
@@ -177,7 +177,7 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Transfer to a goal', style: Theme.of(context).textTheme.titleLarge),
+        SheetTitle('Transfer to a goal'),
         const SizedBox(height: 4),
         Text('Savings stay out of your spending budget.', style: TextStyle(color: p.muted, fontSize: 12.5)),
         const SizedBox(height: 14),

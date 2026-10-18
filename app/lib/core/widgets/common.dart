@@ -248,6 +248,27 @@ class PageHeader extends StatelessWidget {
   }
 }
 
+/// A bottom sheet's title with a close button, so there's always a clear
+/// way out besides dragging it down.
+class SheetTitle extends StatelessWidget {
+  const SheetTitle(this.title, {super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+      IconButton(
+        tooltip: 'Close',
+        visualDensity: VisualDensity.compact,
+        icon: const Icon(Icons.close_rounded),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+    ],
+  );
+}
+
 class ErrorRetry extends StatelessWidget {
   const ErrorRetry({super.key, required this.error, required this.onRetry});
 

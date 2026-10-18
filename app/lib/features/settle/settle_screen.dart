@@ -329,7 +329,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Settle up', style: Theme.of(context).textTheme.titleLarge),
+              SheetTitle('Settle up'),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

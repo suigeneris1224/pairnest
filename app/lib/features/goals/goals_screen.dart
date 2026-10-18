@@ -532,7 +532,7 @@ class _GoalEditorState extends ConsumerState<_GoalEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_existing == null ? 'New goal' : 'Edit goal', style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle(_existing == null ? 'New goal' : 'Edit goal'),
             const SizedBox(height: 16),
             SizedBox(
               height: 60,

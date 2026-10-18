@@ -386,7 +386,7 @@ class _PlanEditorState extends ConsumerState<_PlanEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('New plan', style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle('New plan'),
             const SizedBox(height: 16),
             PillTabs(
               labels: const ['Date', 'Life plan'],

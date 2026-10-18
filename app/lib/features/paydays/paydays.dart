@@ -389,7 +389,7 @@ class _PaydayEditorState extends ConsumerState<PaydayEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_existing == null ? 'New payday' : 'Edit payday', style: Theme.of(context).textTheme.titleLarge),
+            SheetTitle(_existing == null ? 'New payday' : 'Edit payday'),
             const SizedBox(height: 16),
             TextField(
               controller: _title,

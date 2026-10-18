@@ -1212,6 +1212,26 @@ void main() {
     expect(find.text('Set your shared budget ›'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('^In shared wallets, ')), findsNothing, reason: 'no corner when it is the main figure');
   });
+
+  testWidgets('form sheets can be closed with a button', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/home/wallets');
+    await _settle(tester);
+    await tester.tap(find.byTooltip('Add wallet'));
+    await _settle(tester);
+    expect(find.text('New wallet'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close'));
+    await _settle(tester);
+    expect(find.text('New wallet'), findsNothing);
+    expect(find.text('Our Wallets'), findsOneWidget);
+
+    await tester.tap(find.text('Top up'));
+    await _settle(tester);
+    await tester.tap(find.byTooltip('Close'));
+    await _settle(tester);
+    expect(find.text('Top up Our Maya'), findsNothing);
+    expect(find.textContaining('Moved ₱'), findsNothing, reason: 'closing moves nothing');
+  });
 }
 
 ProviderContainer container0(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(MaterialApp).first));
