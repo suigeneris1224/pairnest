@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../core/format.dart';
 import '../core/onboarding_options.dart';
 import 'models.dart';
+import 'payday_schedule.dart';
 import 'repository.dart';
 
 /// In-memory demo data mirroring the design mockup (Alex & Sam).
@@ -30,6 +31,7 @@ class MockRepository implements PairnestRepository {
   final _moods = <Mood>[];
   final _plans = <Plan>[];
   final _bills = <Bill>[];
+  final _paydays = <Payday>[];
   final _settlements = <Settlement>[];
   final _answers = <int, List<TalkAnswer>>{};
   final _prompts = const [
@@ -45,6 +47,30 @@ class MockRepository implements PairnestRepository {
     final now = DateTime.now();
     final m = monthStart(now);
     final today = DateTime(now.year, now.month, now.day);
+    // From tomorrow, so the demo never opens on an unlogged payday.
+    final tomorrow = today.add(const Duration(days: 1));
+    _paydays.addAll([
+      Payday(
+        id: 1,
+        userId: _user.id,
+        userName: _user.name,
+        title: 'Salary',
+        amount: 22500,
+        frequency: 'semimonthly',
+        days: const [15, 30],
+        nextOn: firstPaydayOnOrAfter(const [15, 30], tomorrow),
+      ),
+      Payday(
+        id: 2,
+        userId: _sam.id,
+        userName: _sam.name,
+        title: 'Salary',
+        amount: 28000,
+        frequency: 'monthly',
+        days: const [25],
+        nextOn: firstPaydayOnOrAfter(const [25], tomorrow),
+      ),
+    ]);
     _bills.addAll([
       Bill(
         id: 1,
@@ -329,6 +355,7 @@ class MockRepository implements PairnestRepository {
             .fold(0.0, (a, t) => a + (t.isRelease ? -t.amount : t.amount)),
       ),
       upcomingBills: bills.where((b) => !b.nextDueOn.isAfter(soon)).take(5).toList(),
+      paydays: await paydays(),
     );
   }
 
@@ -462,6 +489,89 @@ class MockRepository implements PairnestRepository {
     isSplit: b.isSplit,
     userName: b.userName,
   );
+
+  @override
+  Future<List<Payday>> paydays() => _delay(() => [..._paydays]..sort((a, b) => a.nextOn.compareTo(b.nextOn)));
+
+  /// One of my paydays; a partner's can't be changed or logged.
+  int _myPaydayIndex(int id) {
+    final i = _paydays.indexWhere((d) => d.id == id);
+    if (i < 0) throw Exception('That payday is gone.');
+    final d = _paydays[i];
+    if (d.userId != _user.id) throw Exception("Only ${d.userName} can change ${d.userName}'s payday.");
+    return i;
+  }
+
+  Payday _payday(int id, PaydayDraft d, {DateTime? nextOn}) {
+    final now = DateTime.now();
+    final days = isByDay(d.frequency) ? ([...d.days]..sort()) : const <int>[];
+    return Payday(
+      id: id,
+      userId: _user.id,
+      userName: _user.name,
+      title: d.title,
+      amount: d.amount,
+      frequency: d.frequency,
+      days: days,
+      nextOn: nextOn ?? (isByDay(d.frequency) ? firstPaydayOnOrAfter(days, now) : d.nextOn!),
+      isSplit: d.isSplit,
+    );
+  }
+
+  Payday _withNext(Payday d, DateTime nextOn) => Payday(
+    id: d.id,
+    userId: d.userId,
+    userName: d.userName,
+    title: d.title,
+    amount: d.amount,
+    frequency: d.frequency,
+    days: d.days,
+    nextOn: nextOn,
+    isSplit: d.isSplit,
+  );
+
+  @override
+  Future<Payday> addPayday(PaydayDraft d) => _delay(() {
+    final payday = _payday(_nextId++, d);
+    _paydays.add(payday);
+    return payday;
+  });
+
+  @override
+  Future<Payday> updatePayday(int id, PaydayDraft d) => _delay(() {
+    final i = _myPaydayIndex(id);
+    return _paydays[i] = _payday(id, d);
+  });
+
+  @override
+  Future<void> deletePayday(int id) => _delay(() => _paydays.removeAt(_myPaydayIndex(id)));
+
+  @override
+  Future<({Payday payday, int transactionId})> receivePayday(int id, {double? amount}) async {
+    final d = _paydays[_myPaydayIndex(id)];
+    final now = DateTime.now();
+    final txn = await addTransaction(
+      TxnDraft(
+        type: 'income',
+        amount: amount ?? d.amount,
+        category: 'income',
+        title: d.title,
+        paymentMethod: 'bank',
+        isSplit: d.isSplit,
+        occurredOn: DateTime(now.year, now.month, now.day),
+      ),
+    );
+    final moved = _withNext(d, nextPayday(d.frequency, d.nextOn, d.days));
+    _paydays[_myPaydayIndex(id)] = moved;
+    return (payday: moved, transactionId: txn.id);
+  }
+
+  @override
+  Future<Payday> unreceivePayday(int id, {required int transactionId, required DateTime previousNext}) => _delay(() {
+    _txns.removeWhere((t) => t.id == transactionId);
+    final i = _myPaydayIndex(id);
+    return _paydays[i] = _withNext(_paydays[i], previousNext);
+  });
 
   @override
   Future<List<FeedItem>> feed() => _delay(() {

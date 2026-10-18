@@ -12,6 +12,7 @@ import 'package:pairnest/core/mascot/mascot.dart';
 import 'package:pairnest/core/theme/palettes.dart';
 import 'package:pairnest/data/mock_repository.dart';
 import 'package:pairnest/data/models.dart';
+import 'package:pairnest/data/payday_schedule.dart';
 import 'package:pairnest/data/providers.dart';
 import 'package:pairnest/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -830,5 +831,103 @@ void main() {
   testWidgets('no recap nudge after the first week', (tester) async {
     await _signedIn(tester, overrides: [nowProvider.overrideWithValue(() => DateTime(2026, 11, 12))]);
     expect(find.textContaining('recap is ready'), findsNothing);
+  });
+
+  // The demo seeds Alex's pay on the 15th & 30th and Sam's on the 25th, from tomorrow.
+  DateTime seededPayday(List<int> days) {
+    final now = DateTime.now();
+    return firstPaydayOnOrAfter(days, DateTime(now.year, now.month, now.day + 1));
+  }
+
+  testWidgets('on payday Home asks to log it; the amount can change and Undo puts it back', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final payday = seededPayday(const [15, 30]);
+    await _signedIn(tester, repo: repo, overrides: [nowProvider.overrideWithValue(() => payday)]);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    expect(find.text('Payday! Log your Salary'), findsOneWidget);
+    expect(find.text('₱22,500 · Payday today'), findsOneWidget);
+    expect(find.text('Payday today'), findsNothing, reason: 'the card line steps aside for the strip');
+    await tester.tap(find.text('Log it'));
+    await _settle(tester);
+    expect(find.text('Did your Salary come in?'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Amount received'), '23000');
+    await _settle(tester);
+    await tester.tap(find.text('Log ₱23,000'));
+    await _settle(tester);
+
+    expect(find.textContaining('Salary logged · next payday'), findsOneWidget);
+    expect(find.text('Payday! Log your Salary'), findsNothing);
+    final txns = await resolve(repo.transactions(month: DateTime.now()));
+    expect(txns.where((t) => t.isIncome && t.title == 'Salary' && t.amount == 23000), hasLength(1));
+
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect(find.text('Payday! Log your Salary'), findsOneWidget);
+    final after = await resolve(repo.transactions(month: DateTime.now()));
+    expect(after.where((t) => t.amount == 23000), isEmpty);
+  });
+
+  testWidgets('before payday the card shows when it is and what you can spend a day', (tester) async {
+    final a = seededPayday(const [15, 30]);
+    final b = seededPayday(const [25]);
+    final soonest = a.isBefore(b) ? a : b;
+    await _signedIn(tester, overrides: [nowProvider.overrideWithValue(() => soonest.subtract(const Duration(days: 3)))]);
+    expect(find.textContaining('recap is ready'), findsNothing);
+    expect(find.text('Payday! Log your Salary'), findsNothing);
+    expect(find.text('Payday in 3 days'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^₱[\d,]+ a day$'), findRichText: true), findsOneWidget);
+  });
+
+  testWidgets("a partner's payday is never nagged, and only your own can be logged", (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final sams = seededPayday(const [25]);
+    final container = await _signedIn(tester, repo: repo, overrides: [nowProvider.overrideWithValue(() => sams)]);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    // With only Sam's payday left, nothing asks Alex to log it.
+    await resolve(repo.deletePayday(1));
+    container.invalidate(dashboardProvider);
+    await _settle(tester);
+    expect(find.text('Payday! Log your Salary'), findsNothing);
+    expect(find.text('Payday today'), findsOneWidget);
+
+    container.read(routerProvider).go('/home/budgets');
+    await _settle(tester);
+    await tester.scrollUntilVisible(find.text("Sam's Salary"), 200, scrollable: find.byType(Scrollable).last);
+    expect(find.byTooltip('Log Salary'), findsNothing);
+    expect(find.textContaining('Monthly · 25th'), findsOneWidget);
+  });
+
+  testWidgets('a payday can be added from the Budgets page', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/home/budgets');
+    await _settle(tester);
+    await tester.scrollUntilVisible(find.text('Paydays'), 200, scrollable: find.byType(Scrollable).last);
+    await tester.ensureVisible(find.text('Add payday'));
+    await _settle(tester);
+    await tester.tap(find.text('Add payday'));
+    await _settle(tester);
+    expect(find.text('New payday'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Freelance');
+    await tester.enterText(find.widgetWithText(TextField, 'Usual take-home pay'), '5000');
+    await tester.tap(find.text('Weekly'));
+    await _settle(tester);
+    expect(find.text('Next payday'), findsOneWidget);
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Add payday'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Add payday'));
+    await _settle(tester);
+
+    expect(find.text('New payday'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Freelance'), 200, scrollable: find.byType(Scrollable).last);
+    expect(find.textContaining('Every week'), findsOneWidget);
+    expect(find.byTooltip('Log Freelance'), findsOneWidget);
   });
 }

@@ -31,6 +31,8 @@ class DashboardController extends Controller
             'upcoming_bills' => $couple->bills()->with('user:id,name')
                 ->where('next_due_on', '<=', $now->addDays(14)->toDateString())
                 ->orderBy('next_due_on')->limit(5)->get(),
+            // Both partners' pay schedules, soonest first.
+            'paydays' => $couple->paydays()->with('user:id,name')->orderBy('next_on')->orderBy('id')->get(),
             'recent' => $couple->transactions()->with('user:id,name')
                 ->latest('occurred_on')->latest('id')->limit(5)->get(),
         ]);

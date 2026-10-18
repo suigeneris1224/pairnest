@@ -60,6 +60,11 @@ class Couple extends Model
         return $this->hasMany(Bill::class);
     }
 
+    public function paydays(): HasMany
+    {
+        return $this->hasMany(Payday::class);
+    }
+
     public function settlements(): HasMany
     {
         return $this->hasMany(Settlement::class);

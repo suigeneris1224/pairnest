@@ -344,6 +344,102 @@ class PairnestApiTest extends TestCase
             ->assertJsonPath('upcoming_bills.1.title', 'Soon');
     }
 
+    public function test_paydays_log_income_and_move_to_the_next_payday(): void
+    {
+        [, $alex] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2026, 10, 16));
+
+        $res = $this->postJson('/api/v1/paydays', ['amount' => 22500, 'frequency' => 'semimonthly', 'days' => [30, 15]])
+            ->assertCreated()
+            ->assertJsonPath('title', 'Salary')
+            ->assertJsonPath('next_on', '2026-10-30')
+            ->assertJsonPath('days', [15, 30])
+            ->assertJsonPath('user.name', 'Alex')
+            ->assertJsonMissingPath('day_a');
+        $id = $res->json('id');
+
+        // Take-home pay varies, so the logged amount can differ from the plan.
+        $this->travelTo(now()->setDate(2026, 10, 30));
+        $txn = $this->postJson("/api/v1/paydays/{$id}/receive", ['amount' => 23100.5])
+            ->assertCreated()
+            ->assertJsonPath('payday.next_on', '2026-11-15')
+            ->assertJsonPath('transaction.type', 'income')
+            ->assertJsonPath('transaction.category', 'income')
+            ->assertJsonPath('transaction.amount', 23100.5)
+            ->assertJsonPath('transaction.title', 'Salary')
+            ->assertJsonPath('transaction.payment_method', 'bank')
+            ->assertJsonPath('transaction.occurred_on', '2026-10-30')
+            ->json('transaction.id');
+        $this->postJson("/api/v1/paydays/{$id}/receive")
+            ->assertJsonPath('payday.next_on', '2026-11-30')
+            ->assertJsonPath('transaction.amount', 22500);
+        $this->postJson("/api/v1/paydays/{$id}/receive")->assertJsonPath('payday.next_on', '2026-12-15');
+
+        // Undo puts the date back and removes the income; a stranger's transaction is refused.
+        $this->postJson("/api/v1/paydays/{$id}/unreceive", ['transaction_id' => $txn + 999, 'next_on' => '2026-11-30'])
+            ->assertUnprocessable();
+        $this->postJson("/api/v1/paydays/{$id}/unreceive", ['transaction_id' => $txn, 'next_on' => '2026-10-30'])
+            ->assertOk()
+            ->assertJsonPath('next_on', '2026-10-30');
+        $this->getJson('/api/v1/transactions')->assertJsonCount(2, 'data');
+
+        $this->postJson('/api/v1/paydays', ['amount' => 1, 'frequency' => 'semimonthly', 'days' => [15, 15]])
+            ->assertUnprocessable()->assertJsonValidationErrors('days');
+        $this->postJson('/api/v1/paydays', ['amount' => 1, 'frequency' => 'weekly'])
+            ->assertUnprocessable()->assertJsonValidationErrors('next_on');
+    }
+
+    public function test_payday_schedules_handle_short_months(): void
+    {
+        [, $alex] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2027, 2, 16));
+
+        $twice = $this->postJson('/api/v1/paydays', ['amount' => 100, 'frequency' => 'semimonthly', 'days' => [15, 30]])
+            ->assertJsonPath('next_on', '2027-02-28')->json('id');
+        $this->postJson("/api/v1/paydays/{$twice}/receive")->assertJsonPath('payday.next_on', '2027-03-15');
+
+        $monthly = $this->postJson('/api/v1/paydays', ['amount' => 100, 'frequency' => 'monthly', 'days' => [31]])
+            ->assertJsonPath('next_on', '2027-02-28')->json('id');
+        $this->postJson("/api/v1/paydays/{$monthly}/receive")->assertJsonPath('payday.next_on', '2027-03-31');
+        $this->postJson("/api/v1/paydays/{$monthly}/receive")->assertJsonPath('payday.next_on', '2027-04-30');
+
+        $biweekly = $this->postJson('/api/v1/paydays', ['amount' => 100, 'frequency' => 'biweekly', 'next_on' => '2027-02-19'])
+            ->assertJsonPath('days', [])->json('id');
+        $this->postJson("/api/v1/paydays/{$biweekly}/receive")->assertJsonPath('payday.next_on', '2027-03-05');
+
+        // Switching to weekly drops the days of the month.
+        $this->patchJson("/api/v1/paydays/{$twice}", ['frequency' => 'weekly', 'next_on' => '2027-02-20'])
+            ->assertOk()->assertJsonPath('days', [])->assertJsonPath('next_on', '2027-02-20');
+    }
+
+    public function test_only_the_owner_can_change_or_log_a_payday(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        [, $other] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2026, 10, 10));
+        $id = $this->postJson('/api/v1/paydays', ['amount' => 22500, 'frequency' => 'monthly', 'days' => [25]])->json('id');
+
+        Sanctum::actingAs($sam);
+        $this->getJson('/api/v1/paydays')->assertOk()->assertJsonCount(1)->assertJsonPath('0.user.name', 'Alex');
+        $this->getJson('/api/v1/dashboard')->assertJsonCount(1, 'paydays')->assertJsonPath('paydays.0.next_on', '2026-10-25');
+        $this->patchJson("/api/v1/paydays/{$id}", ['amount' => 1])
+            ->assertForbidden()->assertJsonPath('message', "Only Alex can change Alex's payday.");
+        $this->postJson("/api/v1/paydays/{$id}/receive")->assertForbidden();
+        $this->deleteJson("/api/v1/paydays/{$id}")->assertForbidden();
+
+        Sanctum::actingAs($other);
+        $this->getJson('/api/v1/paydays')->assertJsonCount(0);
+        $this->postJson("/api/v1/paydays/{$id}/receive")->assertNotFound();
+
+        Sanctum::actingAs($alex);
+        $this->patchJson("/api/v1/paydays/{$id}", ['title' => 'Pay', 'amount' => 24000])
+            ->assertOk()->assertJsonPath('amount', 24000)->assertJsonPath('next_on', '2026-10-25');
+        $this->deleteJson("/api/v1/paydays/{$id}")->assertNoContent();
+    }
+
     public function test_goal_contributions_update_progress(): void
     {
         [, $alex, $sam] = $this->pair();

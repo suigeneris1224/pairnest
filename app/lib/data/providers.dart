@@ -287,6 +287,26 @@ final talkHistoryProvider = FutureProvider<List<PastTalk>>((ref) => ref.watch(re
 
 final billsProvider = FutureProvider<List<Bill>>((ref) => ref.watch(repositoryProvider).bills());
 
+final paydaysProvider = FutureProvider<List<Payday>>((ref) => ref.watch(repositoryProvider).paydays());
+
+/// My paydays that have come and aren't logged yet. A partner's are never nagged.
+final duePaydaysProvider = Provider<List<Payday>>((ref) {
+  final paydays = ref.watch(dashboardProvider).value?.paydays ?? const <Payday>[];
+  final me = ref.watch(meProvider).user.id;
+  final now = ref.watch(nowProvider)();
+  return [
+    for (final d in paydays)
+      if (d.userId == me && d.isDue(now)) d,
+  ];
+});
+
+/// The soonest payday that hasn't passed, for either partner.
+final nextPaydayProvider = Provider<Payday?>((ref) {
+  final paydays = ref.watch(dashboardProvider).value?.paydays ?? const <Payday>[];
+  final now = ref.watch(nowProvider)();
+  return paydays.where((d) => d.daysUntil(now) >= 0).fold<Payday?>(null, (a, d) => a == null || d.nextOn.isBefore(a.nextOn) ? d : a);
+});
+
 final balanceProvider = FutureProvider<SplitBalance>((ref) => ref.watch(repositoryProvider).balance());
 
 final plansProvider = FutureProvider<List<Plan>>((ref) => ref.watch(repositoryProvider).plans());
@@ -299,6 +319,7 @@ final _moneyProviders = <ProviderOrFamily>[
   transactionsRangeProvider,
   budgetProvider,
   billsProvider,
+  paydaysProvider,
   balanceProvider,
   goalsProvider,
 ];

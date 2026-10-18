@@ -156,6 +156,23 @@ void main() {
     expect((await alex.removeAvatar()).user.avatarVersion, isNull);
     expect(await sam.avatar(withPhoto.user.id), isNull);
 
+    // Paydays: logged as income with the real amount, undoable, and only by their owner.
+    final salary = await alex.addPayday(const PaydayDraft(amount: 22500, frequency: 'semimonthly', days: [30, 15]));
+    expect(salary.days, [15, 30]);
+    expect(salary.scheduleLabel, '15th & 30th');
+    final weekly = await alex.addPayday(PaydayDraft(title: 'Tips', amount: 900, frequency: 'weekly', nextOn: month));
+    expect(weekly.days, isEmpty);
+    expect((await sam.dashboard()).paydays.map((d) => d.title), containsAll(['Salary', 'Tips']));
+    await expectLater(sam.receivePayday(salary.id), throwsA(anything));
+    final got = await alex.receivePayday(salary.id, amount: 23100);
+    expect(got.payday.nextOn.isAfter(salary.nextOn), isTrue);
+    expect((await alex.transactions(month: month)).where((t) => t.isIncome && t.amount == 23100), hasLength(1));
+    final back = await alex.unreceivePayday(salary.id, transactionId: got.transactionId, previousNext: salary.nextOn);
+    expect(back.nextOn, salary.nextOn);
+    expect((await alex.updatePayday(weekly.id, const PaydayDraft(title: 'Tips', amount: 1000, frequency: 'monthly', days: [5]))).days, [5]);
+    await alex.deletePayday(weekly.id);
+    expect((await sam.paydays()).map((d) => d.title), ['Salary']);
+
     // Activity loads the whole month (no 30-item cut-off) and custom ranges.
     final day = DateTime(month.year, month.month, 1);
     for (var i = 0; i < 31; i++) {

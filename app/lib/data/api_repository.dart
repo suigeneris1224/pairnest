@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/format.dart';
 import 'models.dart';
+import 'payday_schedule.dart';
 import 'repository.dart';
 
 /// Talks to the Laravel API (`backend/`), authenticating with a Sanctum token.
@@ -348,6 +349,41 @@ class ApiRepository implements PairnestRepository {
     final res = await _dio.post('bills/$id/unpay', data: {'transaction_id': transactionId, 'next_due_on': dayKey(previousDue)});
     return Bill.fromJson(res.data as Map<String, dynamic>);
   });
+
+  @override
+  Future<List<Payday>> paydays() =>
+      _call(() async => [for (final d in (await _dio.get('paydays')).data as List) Payday.fromJson(d as Map<String, dynamic>)]);
+
+  @override
+  Future<Payday> addPayday(PaydayDraft d) =>
+      _call(() async => Payday.fromJson((await _dio.post('paydays', data: _paydayBody(d))).data as Map<String, dynamic>));
+
+  @override
+  Future<Payday> updatePayday(int id, PaydayDraft d) =>
+      _call(() async => Payday.fromJson((await _dio.patch('paydays/$id', data: _paydayBody(d))).data as Map<String, dynamic>));
+
+  @override
+  Future<void> deletePayday(int id) => _call(() => _dio.delete('paydays/$id'));
+
+  @override
+  Future<({Payday payday, int transactionId})> receivePayday(int id, {double? amount}) => _call(() async {
+    final data = (await _dio.post('paydays/$id/receive', data: {'amount': ?amount})).data as Map<String, dynamic>;
+    return (payday: Payday.fromJson(data['payday'] as Map<String, dynamic>), transactionId: (data['transaction'] as Map)['id'] as int);
+  });
+
+  @override
+  Future<Payday> unreceivePayday(int id, {required int transactionId, required DateTime previousNext}) => _call(() async {
+    final res = await _dio.post('paydays/$id/unreceive', data: {'transaction_id': transactionId, 'next_on': dayKey(previousNext)});
+    return Payday.fromJson(res.data as Map<String, dynamic>);
+  });
+
+  static Map<String, dynamic> _paydayBody(PaydayDraft d) => {
+    'title': d.title,
+    'amount': d.amount,
+    'frequency': d.frequency,
+    if (isByDay(d.frequency)) 'days': d.days else 'next_on': dayKey(d.nextOn!),
+    'is_split': d.isSplit,
+  };
 
   @override
   Future<SplitBalance> balance() => _call(() async => SplitBalance.fromJson((await _dio.get('balance')).data as Map<String, dynamic>));

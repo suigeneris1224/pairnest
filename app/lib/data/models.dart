@@ -1,3 +1,5 @@
+import 'payday_schedule.dart';
+
 double _num(Object? v) => v == null ? 0 : (v is num ? v.toDouble() : double.parse(v.toString()));
 
 DateTime? _date(Object? v) => v == null ? null : DateTime.parse(v.toString()).toLocal();
@@ -300,6 +302,96 @@ class BillDraft {
   final bool isSplit;
 }
 
+/// One partner's pay schedule. Logging it on payday records income.
+class Payday {
+  const Payday({
+    required this.id,
+    required this.userId,
+    required this.title,
+    required this.amount,
+    required this.frequency,
+    required this.nextOn,
+    this.days = const [],
+    this.isSplit = true,
+    this.userName = '',
+  });
+
+  factory Payday.fromJson(Map<String, dynamic> j) => Payday(
+    id: j['id'] as int,
+    userId: j['user_id'] as int,
+    title: j['title'] as String,
+    amount: _num(j['amount']),
+    frequency: j['frequency'] as String,
+    nextOn: DateTime.parse(j['next_on'] as String),
+    days: [for (final d in (j['days'] ?? const []) as List) (d as num).toInt()],
+    isSplit: j['is_split'] == true || j['is_split'] == 1,
+    userName: ((j['user'] as Map?)?['name'] ?? '') as String,
+  );
+
+  final int id;
+  final int userId;
+  final String title;
+  final double amount;
+
+  /// One of [payFrequencies].
+  final String frequency;
+  final DateTime nextOn;
+
+  /// Days of the month for monthly and twice-a-month pay, e.g. [15, 30].
+  final List<int> days;
+  final bool isSplit;
+  final String userName;
+
+  /// Whole days until payday; zero on the day, negative once it's passed unlogged.
+  int daysUntil(DateTime now) => DateTime(nextOn.year, nextOn.month, nextOn.day).difference(DateTime(now.year, now.month, now.day)).inDays;
+
+  /// Payday has come and the pay isn't logged yet.
+  bool isDue(DateTime now) => daysUntil(now) <= 0;
+
+  /// "15th & 30th", "Monthly · 25th", "Every 2 weeks", "Every week".
+  String get scheduleLabel => switch (frequency) {
+    'semimonthly' when days.length == 2 => '${ordinal(days[0])} & ${ordinal(days[1])}',
+    'monthly' when days.isNotEmpty => 'Monthly · ${ordinal(days[0])}',
+    'biweekly' => 'Every 2 weeks',
+    'weekly' => 'Every week',
+    _ => 'Twice a month',
+  };
+
+  /// "Payday today", "Payday tomorrow", "Payday in 3 days", "Payday was 2 days ago".
+  String whenLabel(DateTime now) {
+    final d = daysUntil(now);
+    return switch (d) {
+      0 => 'Payday today',
+      1 => 'Payday tomorrow',
+      -1 => 'Payday was yesterday',
+      < 0 => 'Payday was ${-d} days ago',
+      _ => 'Payday in $d days',
+    };
+  }
+}
+
+class PaydayDraft {
+  const PaydayDraft({
+    this.title = 'Salary',
+    required this.amount,
+    required this.frequency,
+    this.days = const [],
+    this.nextOn,
+    this.isSplit = true,
+  });
+
+  final String title;
+  final double amount;
+  final String frequency;
+
+  /// For monthly (one day) and twice-a-month (two days) pay.
+  final List<int> days;
+
+  /// For weekly and every-2-weeks pay.
+  final DateTime? nextOn;
+  final bool isSplit;
+}
+
 /// One partner paying the other back for shared expenses.
 class Settlement {
   const Settlement({
@@ -392,6 +484,7 @@ class Dashboard {
     this.lastMonthSpent = 0,
     this.upcomingBills = const [],
     this.savedThisMonth = 0,
+    this.paydays = const [],
   });
 
   factory Dashboard.fromJson(Map<String, dynamic> j) {
@@ -404,6 +497,7 @@ class Dashboard {
       lastMonthSpent: _num(j['last_month_spent']),
       upcomingBills: [for (final b in (j['upcoming_bills'] ?? const []) as List) Bill.fromJson(b as Map<String, dynamic>)],
       savedThisMonth: _num(j['saved_this_month']),
+      paydays: [for (final d in (j['paydays'] ?? const []) as List) Payday.fromJson(d as Map<String, dynamic>)],
     );
   }
 
@@ -419,6 +513,9 @@ class Dashboard {
 
   /// Transferred into goals this month; savings, not spending.
   final double savedThisMonth;
+
+  /// Both partners' pay schedules, soonest first.
+  final List<Payday> paydays;
 
   /// Spending change vs last month as a fraction (0.12 = 12% more), or null
   /// when there's nothing to compare against.

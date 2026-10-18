@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\BillController;
+use App\Http\Controllers\PaydayController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CoupleController;
 use App\Http\Controllers\DashboardController;
@@ -57,6 +58,9 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('bills', BillController::class)->except('show');
             Route::post('bills/{bill}/pay', [BillController::class, 'pay']);
             Route::post('bills/{bill}/unpay', [BillController::class, 'unpay']);
+            Route::apiResource('paydays', PaydayController::class)->except('show');
+            Route::post('paydays/{payday}/receive', [PaydayController::class, 'receive']);
+            Route::post('paydays/{payday}/unreceive', [PaydayController::class, 'unreceive']);
             Route::get('balance', [SettlementController::class, 'balance']);
             Route::apiResource('settlements', SettlementController::class)->only(['store', 'destroy']);
 

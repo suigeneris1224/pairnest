@@ -11,6 +11,7 @@ import '../../core/widgets/common.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../bills/bills.dart';
+import '../paydays/paydays.dart';
 
 class BudgetsScreen extends ConsumerStatefulWidget {
   const BudgetsScreen({super.key});
@@ -87,6 +88,8 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
                               ),
                               const SizedBox(height: 14),
                               const FadeSlideIn(index: 1, child: BillsSection()),
+                              const SizedBox(height: 14),
+                              const FadeSlideIn(index: 2, child: PaydaysSection()),
                             ],
                           )
                         : ListView(
@@ -125,8 +128,10 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
                               const SizedBox(height: 14),
                               FadeSlideIn(index: 2, child: const BillsSection()),
                               const SizedBox(height: 14),
+                              FadeSlideIn(index: 3, child: const PaydaysSection()),
+                              const SizedBox(height: 14),
                               for (final (i, line) in value.lines.indexed) ...[
-                                FadeSlideIn(index: i + 3, child: _LineCard(line)),
+                                FadeSlideIn(index: i + 4, child: _LineCard(line)),
                                 const SizedBox(height: 12),
                               ],
                             ],

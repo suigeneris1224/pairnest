@@ -89,6 +89,18 @@ abstract class PairnestRepository {
   /// Undoes [payBill]: deletes its expense and puts the due date back.
   Future<Bill> unpayBill(int id, {required int transactionId, required DateTime previousDue});
 
+  Future<List<Payday>> paydays();
+  Future<Payday> addPayday(PaydayDraft draft);
+  Future<Payday> updatePayday(int id, PaydayDraft draft);
+  Future<void> deletePayday(int id);
+
+  /// Logs this payday's pay as income ([amount] when it differs from the
+  /// plan) and returns the payday moved on to the next one.
+  Future<({Payday payday, int transactionId})> receivePayday(int id, {double? amount});
+
+  /// Undoes [receivePayday]: deletes its income and puts the payday back.
+  Future<Payday> unreceivePayday(int id, {required int transactionId, required DateTime previousNext});
+
   /// Who owes whom between the two of you, as a running total.
   Future<SplitBalance> balance();
   Future<Settlement> settleUp({required double amount, required int fromUserId});

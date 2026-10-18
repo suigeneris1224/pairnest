@@ -12,9 +12,11 @@ import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/mood_face.dart';
 import '../../core/widgets/nest_ui.dart';
 import '../../data/models.dart';
+import '../../data/payday_schedule.dart';
 import '../../data/providers.dart';
 import '../bills/bills.dart';
 import '../goals/transfer.dart';
+import '../paydays/paydays.dart';
 import '../settle/settle_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -350,6 +352,69 @@ class _BillReminders extends ConsumerWidget {
   }
 }
 
+/// "Payday! Log your Salary" while one of my paydays is waiting to be logged.
+class _PaydayReminder extends ConsumerWidget {
+  const _PaydayReminder();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final due = ref.watch(duePaydaysProvider);
+    if (due.isEmpty) return const SizedBox.shrink();
+    final payday = due.first;
+    final p = context.pn;
+    final hide = ref.watch(hideAmountsProvider);
+    final tone = Pastel.sky;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: FadeSlideIn(
+        child: Material(
+          color: tone.background(p),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => receivePayday(context, ref, payday),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.payments_rounded, size: 20, color: tone.foreground(p)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Payday! Log your ${payday.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tone.foreground(p)),
+                        ),
+                        Text(
+                          hide
+                              ? '₱•••• · ${payday.whenLabel(ref.watch(nowProvider)())}'
+                              : '${peso(payday.amount)} · ${payday.whenLabel(ref.watch(nowProvider)())}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: tone.foreground(p)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: tone.foreground(p)),
+                    onPressed: () => receivePayday(context, ref, payday),
+                    child: const Text('Log it'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A due bill with a "Mark paid" button.
 class _ReminderRow extends ConsumerWidget {
   const _ReminderRow(this.bill, {required this.hide});
@@ -456,6 +521,7 @@ class _DashboardBody extends ConsumerWidget {
       children: [
         FadeSlideIn(child: _BalanceCard(data, hide: hide)),
         const _BillReminders(),
+        const _PaydayReminder(),
         _SettleNudge(hide: hide),
         const _RecapNudge(),
         const SizedBox(height: 14),
@@ -521,7 +587,7 @@ class _DashboardBody extends ConsumerWidget {
             for (final (icon, label, route, tone) in const [
               (Icons.chat_bubble_outline_rounded, 'Money Talks', '/us/talks', Pastel.lavender),
               (Icons.event_rounded, 'Date & Life Planner', '/us/planner', Pastel.peach),
-              (Icons.pie_chart_outline_rounded, 'Budgets & Bills', '/home/budgets', Pastel.sage),
+              (Icons.pie_chart_outline_rounded, 'Budgets, Bills & Paydays', '/home/budgets', Pastel.sage),
               (Icons.handshake_outlined, 'Settle Up', '/home/settle', Pastel.peach),
               (Icons.auto_awesome_outlined, 'Monthly recap', '/home/recap', Pastel.lavender),
               (Icons.palette_outlined, 'Personalize', '/us/personalize', Pastel.sky),
@@ -714,6 +780,7 @@ class _WalletStats extends StatelessWidget {
             ),
           ],
         ),
+        _PaydayLine(remaining: b.remaining, hide: hide),
         if (data.savedThisMonth > 0) ...[
           const SizedBox(height: 8),
           Row(
@@ -730,6 +797,56 @@ class _WalletStats extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// "Payday in 3 days       ₱1,050 a day", under the budget figures. Hidden
+/// while the Payday strip below is asking to log it.
+class _PaydayLine extends ConsumerWidget {
+  const _PaydayLine({required this.remaining, required this.hide});
+
+  final double remaining;
+  final bool hide;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final payday = ref.watch(nextPaydayProvider);
+    if (payday == null || ref.watch(duePaydaysProvider).isNotEmpty) return const SizedBox.shrink();
+    final p = context.pn;
+    final now = ref.watch(nowProvider)();
+    final daily = payday.daysUntil(now) == 0 ? null : dailyAllowance(remaining: remaining, today: now, payday: payday.nextOn);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(Icons.payments_outlined, size: 16, color: Pastel.sky.foreground(p)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              payday.whenLabel(now),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12.5, color: p.text, fontWeight: FontWeight.w500),
+            ),
+          ),
+          if (daily != null)
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: hide ? '₱••••' : peso(daily),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: p.heading),
+                  ),
+                  TextSpan(
+                    text: ' a day',
+                    style: TextStyle(color: p.muted, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
