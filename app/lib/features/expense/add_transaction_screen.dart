@@ -37,6 +37,10 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   late bool _split = _existing?.isSplit ?? true;
   late int _paidBy = _existing?.userId ?? ref.read(meProvider).user.id;
   late int? _walletId = _existing != null ? _existing.walletId : ref.read(prefsProvider).getInt(_lastWalletKey);
+
+  /// "No wallet" on purpose. Edits keep exactly what they had; a new expense
+  /// otherwise falls back to the payer's Cash.
+  late bool _noWallet = _existing != null;
   bool _busy = false;
 
   static const _lastWalletKey = 'last_wallet_id';
@@ -117,7 +121,22 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   /// Whoever pays can use shared wallets and their own.
   int get _payer => _isExpense ? _paidBy : (_existing?.userId ?? ref.read(meProvider).user.id);
 
-  Wallet? _usableWallet(List<Wallet> wallets) => wallets.where((w) => w.id == _walletId && w.usableBy(_payer)).firstOrNull;
+  Wallet? _usableWallet(List<Wallet> wallets) {
+    final picked = wallets.where((w) => w.id == _walletId && w.usableBy(_payer)).firstOrNull;
+    if (picked != null || _noWallet || !_isExpense) return picked;
+    return wallets.where((w) => w.builtin && w.ownerId == _payer).firstOrNull;
+  }
+
+  /// The payer's Cash first, then shared wallets, then the rest.
+  List<Wallet> _choices(List<Wallet> wallets) {
+    int rank(Wallet w) => w.builtin ? 0 : (w.isShared ? 1 : 2);
+    final usable = wallets.where((w) => w.usableBy(_payer)).toList();
+    return [
+      for (final r in [0, 1, 2])
+        for (final w in usable)
+          if (rank(w) == r) w,
+    ];
+  }
 
   Future<void> _delete() async {
     final txn = _existing!;
@@ -240,30 +259,33 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                         style: TextStyle(color: p.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 6),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (final w in wallets.where((w) => w.usableBy(_payer))) ...[
-                              ChoiceChip(
-                                avatar: BrandBadge(brandOf(w.provider), size: 22),
-                                label: Text(w.isShared ? '${w.name} · Ours' : w.name),
-                                selected: selectedWallet?.id == w.id,
-                                onSelected: (_) => setState(() {
-                                  _walletId = w.id;
-                                  // Paid from the shared pot: it's shared spending.
-                                  if (w.isShared) _split = true;
-                                }),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final w in _choices(wallets))
                             ChoiceChip(
-                              label: const Text('No wallet'),
-                              selected: selectedWallet == null,
-                              onSelected: (_) => setState(() => _walletId = null),
+                              showCheckmark: false,
+                              avatar: BrandBadge(brandOf(w.provider), size: 22),
+                              label: Text(w.isShared ? '${w.name} · Ours' : w.name),
+                              selected: selectedWallet?.id == w.id,
+                              onSelected: (_) => setState(() {
+                                _walletId = w.id;
+                                _noWallet = false;
+                                // Paid from the shared pot: it's shared spending.
+                                if (w.isShared) _split = true;
+                              }),
                             ),
-                          ],
-                        ),
+                          ChoiceChip(
+                            showCheckmark: false,
+                            label: const Text('No wallet'),
+                            selected: selectedWallet == null,
+                            onSelected: (_) => setState(() {
+                              _walletId = null;
+                              _noWallet = true;
+                            }),
+                          ),
+                        ],
                       ),
                     ],
                     // Paid from a shared wallet: it came from the pot, not one person.

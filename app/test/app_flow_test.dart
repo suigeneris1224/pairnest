@@ -62,6 +62,9 @@ Future<ProviderContainer> _signedIn(WidgetTester tester, {MockRepository? repo, 
 }
 
 /// pumpAndSettle never settles while a spinner is animating.
+/// The Add Expense form's list (TextFields have Scrollables of their own).
+final _addForm = find.ancestor(of: find.text('Title'), matching: find.byType(Scrollable)).first;
+
 Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 20; i++) {
     await tester.pump(const Duration(milliseconds: 100));
@@ -313,7 +316,7 @@ void main() {
     await _settle(tester);
 
     await tester.enterText(find.byType(TextField).first, '1000');
-    await tester.ensureVisible(find.text('Paid by'));
+    await tester.scrollUntilVisible(find.text('Paid by'), 150, scrollable: _addForm);
     await _settle(tester);
     await tester.tap(find.text('Sam'));
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
@@ -1033,6 +1036,7 @@ void main() {
 
     container.read(routerProvider).push('/add');
     await _settle(tester);
+    await tester.scrollUntilVisible(find.text('Paid by'), 150, scrollable: _addForm);
     expect(find.text('Paid by'), findsOneWidget);
     await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Our Maya · Ours'));
     await tester.tap(find.widgetWithText(ChoiceChip, 'Our Maya · Ours'));
@@ -1312,6 +1316,39 @@ void main() {
     await _settle(tester);
     expect((await resolve(repo.wallets())).firstWhere((w) => w.id == 5).balance, 1500);
     expect((await resolve(repo.balance())).owes!.amount, 415);
+  });
+
+  testWidgets('a new expense is paid with Cash unless you pick another wallet or none', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    container.read(routerProvider).push('/add');
+    await _settle(tester);
+    await tester.enterText(find.byType(TextField).first, '120');
+    await tester.scrollUntilVisible(find.widgetWithText(ChoiceChip, 'Cash'), 150, scrollable: _addForm);
+    final chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).toList();
+    expect((chips.first.label as Text).data, 'Cash', reason: 'Cash comes first');
+    expect(chips.first.selected, isTrue);
+    expect(chips.every((c) => !c.showCheckmark!), isTrue);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await _settle(tester);
+    expect((await resolve(repo.wallets())).firstWhere((w) => w.id == 5).balance, 1500 - 120);
+
+    // "No wallet" still works, and isn't overridden by the Cash default.
+    container.read(routerProvider).push('/add');
+    await _settle(tester);
+    await tester.enterText(find.byType(TextField).first, '80');
+    await tester.scrollUntilVisible(find.widgetWithText(ChoiceChip, 'No wallet'), 150, scrollable: _addForm);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'No wallet'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await _settle(tester);
+    final txns = await resolve(repo.transactions(month: DateTime.now()));
+    expect(txns.firstWhere((t) => t.amount == 80).walletId, isNull);
   });
 
   testWidgets('form sheets can be closed with a button', (tester) async {
