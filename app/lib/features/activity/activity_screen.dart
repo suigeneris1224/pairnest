@@ -141,13 +141,31 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                                 icon: const Icon(Icons.chevron_left_rounded),
                                 onPressed: () => setState(() => _month = DateTime(_month.year, _month.month - 1)),
                               ),
-                              Text(monthLabel(_month), style: const TextStyle(fontWeight: FontWeight.w700)),
+                              Flexible(
+                                child: Text(
+                                  monthLabel(_month),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ),
                               IconButton(
                                 tooltip: 'Next month',
                                 icon: const Icon(Icons.chevron_right_rounded),
                                 onPressed: () => setState(() => _month = DateTime(_month.year, _month.month + 1)),
                               ),
-                              IconButton(tooltip: 'Pick dates', icon: const Icon(Icons.date_range_rounded), onPressed: _pickRange),
+                              IconButton(
+                                tooltip: 'Pick dates',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.date_range_rounded),
+                                onPressed: _pickRange,
+                              ),
+                              IconButton(
+                                tooltip: 'Monthly recap',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.auto_awesome_outlined),
+                                onPressed: () => context.go('/home/recap?month=${monthKey(_month)}'),
+                              ),
                             ]
                           : [
                               IconButton(tooltip: 'Pick dates', icon: const Icon(Icons.date_range_rounded), onPressed: _pickRange),

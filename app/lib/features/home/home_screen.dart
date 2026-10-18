@@ -238,6 +238,67 @@ class _FeedSheet extends ConsumerWidget {
   }
 }
 
+/// In a month's first week: "Your September recap is ready", until dismissed.
+class _RecapNudge extends ConsumerStatefulWidget {
+  const _RecapNudge();
+
+  @override
+  ConsumerState<_RecapNudge> createState() => _RecapNudgeState();
+}
+
+class _RecapNudgeState extends ConsumerState<_RecapNudge> {
+  bool _dismissed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = ref.watch(nowProvider)();
+    final last = DateTime(now.year, now.month - 1);
+    final key = 'recap_seen_${monthKey(last)}';
+    final prefs = ref.watch(prefsProvider);
+    if (now.day > 7 || _dismissed || (prefs.getBool(key) ?? false)) return const SizedBox.shrink();
+    final p = context.pn;
+    final tone = Pastel.lavender;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(
+        color: tone.background(p),
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => context.go('/home/recap?month=${monthKey(last)}'),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+            child: Row(
+              children: [
+                Icon(Icons.auto_awesome_outlined, size: 20, color: tone.foreground(p)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Your ${monthLabel(last).split(' ').first} recap is ready',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: tone.foreground(p)),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, size: 18, color: tone.foreground(p)),
+                IconButton(
+                  tooltip: 'Dismiss recap',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.close_rounded, size: 18, color: tone.foreground(p)),
+                  onPressed: () {
+                    prefs.setBool(key, true);
+                    setState(() => _dismissed = true);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Bills that are overdue, due today or due tomorrow, right under the
 /// balance; takes no space when nothing is due.
 class _BillReminders extends ConsumerWidget {
@@ -396,6 +457,7 @@ class _DashboardBody extends ConsumerWidget {
         FadeSlideIn(child: _BalanceCard(data, hide: hide)),
         const _BillReminders(),
         _SettleNudge(hide: hide),
+        const _RecapNudge(),
         const SizedBox(height: 14),
         FadeSlideIn(
           index: 1,
@@ -461,6 +523,7 @@ class _DashboardBody extends ConsumerWidget {
               (Icons.event_rounded, 'Date & Life Planner', '/us/planner', Pastel.peach),
               (Icons.pie_chart_outline_rounded, 'Budgets & Bills', '/home/budgets', Pastel.sage),
               (Icons.handshake_outlined, 'Settle Up', '/home/settle', Pastel.peach),
+              (Icons.auto_awesome_outlined, 'Monthly recap', '/home/recap', Pastel.lavender),
               (Icons.palette_outlined, 'Personalize', '/us/personalize', Pastel.sky),
             ])
               ListTile(

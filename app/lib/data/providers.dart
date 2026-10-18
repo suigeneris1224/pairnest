@@ -1,12 +1,14 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/format.dart';
 import '../core/mascot/mascot_controller.dart';
+import '../features/recap/monthly_recap.dart';
 import '../core/theme/palettes.dart';
 import 'api_repository.dart';
 import 'mock_repository.dart';
@@ -184,6 +186,51 @@ final photoPickerProvider = Provider<Future<Uint8List?> Function(ImageSource sou
   return (source) async {
     final file = await ImagePicker().pickImage(source: source, maxWidth: 1024, imageQuality: 85);
     return file?.readAsBytes();
+  };
+});
+
+/// Today, injectable so tests and previews can pretend it's another day.
+final nowProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
+/// A month's recap, built on the device from data already loaded elsewhere.
+final recapProvider = FutureProvider.family<MonthlyRecap, DateTime>((ref, month) async {
+  final m = monthStart(month);
+  final results = await Future.wait([
+    ref.watch(transactionsProvider((m, '')).future),
+    ref.watch(transactionsProvider((DateTime(m.year, m.month - 1), '')).future),
+  ]);
+  final budget = await ref.watch(budgetProvider(m).future);
+  final goals = await ref.watch(goalsProvider.future);
+  final moods = await ref.watch(moodsProvider.future);
+  return MonthlyRecap.build(
+    month: m,
+    txns: results[0],
+    previousTxns: results[1],
+    budget: budget,
+    goals: goals,
+    moods: moods,
+    members: ref.read(meProvider).couple?.members ?? const [],
+  );
+});
+
+/// Shares a PNG (or downloads it where sharing isn't available). Returns
+/// true when the system share sheet handled it; overridden in tests.
+final shareImageProvider = Provider<Future<bool> Function(Uint8List png, String name)>((ref) {
+  return (png, name) async {
+    final file = XFile.fromData(png, mimeType: 'image/png', name: name);
+    // Desktop browsers can't reliably share files; a download is what people expect there.
+    final desktopWeb = kIsWeb && defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS;
+    if (desktopWeb) {
+      await file.saveTo(name);
+      return false;
+    }
+    try {
+      await SharePlus.instance.share(ShareParams(files: [file], fileNameOverrides: [name]));
+      return true;
+    } catch (_) {
+      await file.saveTo(name);
+      return false;
+    }
   };
 });
 

@@ -9,6 +9,7 @@ import 'features/activity/activity_screen.dart';
 import 'features/auth/pair_screen.dart';
 import 'features/budgets/budgets_screen.dart';
 import 'features/expense/add_transaction_screen.dart';
+import 'features/recap/recap_screen.dart';
 import 'features/settle/settle_screen.dart';
 import 'features/feelings/check_in_screen.dart';
 import 'features/feelings/feelings_screen.dart';
@@ -95,6 +96,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(path: 'budgets', pageBuilder: (_, state) => _page(state, const BudgetsScreen())),
                   GoRoute(path: 'settle', pageBuilder: (_, state) => _page(state, const SettleScreen())),
+                  GoRoute(
+                    path: 'recap',
+                    pageBuilder: (_, state) {
+                      final m = DateTime.tryParse('${state.uri.queryParameters['month'] ?? ''}-01');
+                      return _page(state, RecapScreen(key: ValueKey(m), month: m));
+                    },
+                  ),
                 ],
               ),
             ],

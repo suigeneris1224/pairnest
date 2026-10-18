@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -766,5 +767,63 @@ void main() {
     container.read(routerProvider).go('/home');
     await _settle(tester);
     expect(find.byType(MascotBadge), findsOneWidget);
+  });
+
+  testWidgets('the monthly recap sums up the month and can be shared', (tester) async {
+    Uint8List? shared;
+    final container = await _signedIn(
+      tester,
+      overrides: [
+        shareImageProvider.overrideWithValue((png, name) async {
+          shared = png;
+          return true;
+        }),
+      ],
+    );
+    container.read(routerProvider).go('/home/recap');
+    await _settle(tester);
+
+    expect(find.text('₱17,780 spent'), findsOneWidget);
+    expect(find.text('of ₱32,000 budget · 56%'), findsOneWidget);
+    expect(find.textContaining('under budget. Nicely done!'), findsOneWidget);
+    expect(find.text('Bills & Utilities'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Sam covered 51% of spending.'), 200, scrollable: find.byType(Scrollable).last);
+
+    await tester.tap(find.byTooltip('Share recap'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 800)));
+    await _settle(tester);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 300)));
+    await _settle(tester);
+    expect(shared, isNotNull);
+    expect(shared!.sublist(1, 4), 'PNG'.codeUnits, reason: 'a PNG image');
+
+    // The month before has nothing logged.
+    await tester.tap(find.byTooltip('Previous month'));
+    await _settle(tester);
+    expect(find.textContaining('Nothing to recap for'), findsOneWidget);
+  });
+
+  testWidgets('Activity opens the recap for the month you are looking at', (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/activity');
+    await _settle(tester);
+    await tester.tap(find.byTooltip('Monthly recap'));
+    await _settle(tester);
+    expect(find.text('₱17,780 spent'), findsOneWidget);
+  });
+
+  testWidgets("in a month's first week Home offers last month's recap", (tester) async {
+    final early = DateTime(2026, 11, 2);
+    final container = await _signedIn(tester, overrides: [nowProvider.overrideWithValue(() => early)]);
+    expect(find.text('Your October recap is ready'), findsOneWidget);
+    await tester.tap(find.byTooltip('Dismiss recap'));
+    await _settle(tester);
+    expect(find.text('Your October recap is ready'), findsNothing);
+    expect(container.read(prefsProvider).getBool('recap_seen_2026-10'), isTrue);
+  });
+
+  testWidgets('no recap nudge after the first week', (tester) async {
+    await _signedIn(tester, overrides: [nowProvider.overrideWithValue(() => DateTime(2026, 11, 12))]);
+    expect(find.textContaining('recap is ready'), findsNothing);
   });
 }

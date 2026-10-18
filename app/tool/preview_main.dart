@@ -24,7 +24,14 @@ Future<void> main() async {
   // ignore: invalid_use_of_visible_for_testing_member
   final fresh = Uri.base.queryParameters['fresh'] != null; // ?fresh=1 starts at onboarding
   // ignore: invalid_use_of_visible_for_testing_member
-  SharedPreferences.setMockInitialValues({'onboarded': !fresh, 'theme_chosen': true, 'theme': theme});
+  SharedPreferences.setMockInitialValues({
+    'onboarded': !fresh,
+    'theme_chosen': true,
+    'theme': theme,
+    // ?hide=1 previews hidden amounts.
+    'hide_amounts': Uri.base.queryParameters['hide'] != null,
+  });
+  final pretendToday = DateTime.tryParse(Uri.base.queryParameters['today'] ?? '');
   final prefs = await SharedPreferences.getInstance();
   final repo = MockRepository(seed: Uri.base.queryParameters['empty'] == null);
   // ?onboarding=1 previews the welcome questions; otherwise open the demo nest.
@@ -61,7 +68,12 @@ Future<void> main() async {
 
   runApp(
     ProviderScope(
-      overrides: [prefsProvider.overrideWithValue(prefs), repositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        prefsProvider.overrideWithValue(prefs),
+        repositoryProvider.overrideWithValue(repo),
+        // ?today=2026-11-02 pretends it's another day (e.g. the recap nudge).
+        if (pretendToday != null) nowProvider.overrideWithValue(() => pretendToday),
+      ],
       child: const PairnestApp(),
     ),
   );
