@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Payday;
 use App\Models\Transaction;
+use App\Models\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,7 @@ class PaydayController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+        $this->checkWallet($request, $data);
         $payday = $request->user()->couple->paydays()->create(
             $this->withSchedule($data, $data['frequency']) + ['user_id' => $request->user()->id]
         );
@@ -34,6 +36,7 @@ class PaydayController extends Controller
     {
         $payday = $this->owned($request, $id);
         $data = $this->validated($request, partial: true);
+        $this->checkWallet($request, $data);
         if (array_intersect_key($data, array_flip(['frequency', 'days', 'next_on']))) {
             $data = $this->withSchedule($data, $data['frequency'] ?? $payday->frequency);
         }
@@ -58,14 +61,17 @@ class PaydayController extends Controller
             'payment_method' => ['sometimes', Rule::in(Transaction::PAYMENT_METHODS)],
         ]);
 
-        $transaction = DB::transaction(function () use ($request, $payday, $data) {
+        $wallet = Wallet::quietly($request->user()->couple, $payday->wallet_id, $payday->user_id);
+
+        $transaction = DB::transaction(function () use ($request, $payday, $data, $wallet) {
             $transaction = $request->user()->couple->transactions()->create([
                 'user_id' => $payday->user_id,
+                'wallet_id' => $wallet?->id,
                 'type' => 'income',
                 'amount' => $data['amount'] ?? $payday->amount,
                 'category' => 'income',
                 'title' => $payday->title,
-                'payment_method' => $data['payment_method'] ?? 'bank',
+                'payment_method' => $wallet?->paymentMethod() ?? $data['payment_method'] ?? 'bank',
                 'is_split' => $payday->is_split,
                 'occurred_on' => CarbonImmutable::today()->toDateString(),
             ]);
@@ -103,6 +109,13 @@ class PaydayController extends Controller
         });
 
         return response()->json($payday->load('user:id,name'));
+    }
+
+    private function checkWallet(Request $request, array $data): void
+    {
+        if (! empty($data['wallet_id'])) {
+            Wallet::usable($request->user()->couple, $data['wallet_id'], $request->user()->id);
+        }
     }
 
     /** A payday in this couple that belongs to the signed-in partner. */
@@ -156,6 +169,7 @@ class PaydayController extends Controller
             'days.*' => ['integer', 'between:1,31'],
             'next_on' => ['sometimes', 'date_format:Y-m-d'],
             'is_split' => ['sometimes', 'boolean'],
+            'wallet_id' => ['sometimes', 'nullable', 'integer'],
         ]);
     }
 }

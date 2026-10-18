@@ -579,6 +579,45 @@ class PairnestApiTest extends TestCase
             ->assertJsonPath('members.1.topped_up_this_month', 4000);
     }
 
+    public function test_paydays_bills_and_goal_transfers_use_their_wallets(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2028, 3, 15));
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash'])->json('id');
+        $bpi = $this->postJson('/api/v1/wallets', ['name' => 'BPI', 'kind' => 'debit', 'provider' => 'bpi'])->json('id');
+
+        // Pay lands in BPI.
+        $payday = $this->postJson('/api/v1/paydays', ['amount' => 20000, 'frequency' => 'monthly', 'days' => [15], 'wallet_id' => $bpi])
+            ->assertJsonPath('wallet_id', $bpi)->json('id');
+        $this->postJson("/api/v1/paydays/{$payday}/receive")
+            ->assertJsonPath('transaction.wallet_id', $bpi)
+            ->assertJsonPath('transaction.payment_method', 'card');
+
+        // Rent is paid from BPI unless another wallet is picked.
+        $rent = $this->postJson('/api/v1/bills', [
+            'title' => 'Rent', 'amount' => 8000, 'category' => 'bills', 'next_due_on' => '2028-03-20', 'wallet_id' => $bpi,
+        ])->json('id');
+        $this->postJson("/api/v1/bills/{$rent}/pay")->assertJsonPath('transaction.wallet_id', $bpi);
+        $this->postJson("/api/v1/bills/{$rent}/pay", ['wallet_id' => $gcash])->assertJsonPath('transaction.wallet_id', $gcash);
+
+        // Saving toward a goal from GCash.
+        $goal = $this->postJson('/api/v1/goals', ['name' => 'Japan', 'target_amount' => 50000])->json('id');
+        $transfer = $this->postJson("/api/v1/goals/{$goal}/contributions", ['amount' => 1000, 'wallet_id' => $gcash])->json('transaction_id');
+        $this->getJson('/api/v1/transactions')->assertJsonFragment(['id' => $transfer, 'wallet_id' => $gcash]);
+
+        $this->getJson('/api/v1/wallets')
+            ->assertJsonPath('0.balance', -9000)
+            ->assertJsonPath('1.balance', 12000);
+
+        // Sam paying Alex's rent skips Alex's personal wallet; Sam can't pick it either.
+        Sanctum::actingAs($sam);
+        $this->postJson("/api/v1/bills/{$rent}/pay")->assertCreated()->assertJsonPath('transaction.wallet_id', null);
+        $this->postJson("/api/v1/bills/{$rent}/pay", ['wallet_id' => $bpi])->assertUnprocessable();
+        $this->postJson('/api/v1/paydays', ['amount' => 1, 'frequency' => 'monthly', 'days' => [1], 'wallet_id' => $bpi])->assertUnprocessable();
+        $this->postJson("/api/v1/goals/{$goal}/contributions", ['amount' => 1, 'wallet_id' => $gcash])->assertUnprocessable();
+    }
+
     public function test_a_used_wallet_is_archived_not_deleted(): void
     {
         [, $alex] = $this->pair();

@@ -68,7 +68,7 @@ abstract class PairnestRepository {
   /// Brings a cancelled goal back, with its savings set aside again.
   Future<Goal> restoreGoal(int id);
 
-  Future<({Goal goal, int? transferId})> contribute(int goalId, double amount);
+  Future<({Goal goal, int? transferId})> contribute(int goalId, double amount, {int? walletId});
 
   Future<List<Mood>> moods();
   Future<Mood> addMood({required String mood, String? note, required bool isPrivate});

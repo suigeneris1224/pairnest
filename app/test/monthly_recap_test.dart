@@ -114,4 +114,39 @@ void main() {
     expect(r.checkIns, 3);
     expect(r.topMood, 'happy');
   });
+
+  test('moves between wallets are ignored, and shared-wallet spending is noted', () {
+    Txn tw(double amount, {String type = 'expense', int? wallet, int? to}) => Txn(
+      id: ++_id,
+      userId: 1,
+      userName: 'Alex',
+      type: type,
+      amount: amount,
+      category: type == 'move' ? 'others' : 'food',
+      title: 'T',
+      paymentMethod: 'cash',
+      isSplit: true,
+      occurredOn: DateTime(2028, 3, 5),
+      walletId: wallet,
+      toWalletId: to,
+    );
+    final r = MonthlyRecap.build(
+      month: DateTime(2028, 3),
+      txns: [
+        tw(400, wallet: 9),
+        tw(100, wallet: 2),
+        tw(5000, type: 'move', wallet: 2, to: 9),
+      ],
+      previousTxns: const [],
+      budget: null,
+      goals: const [],
+      moods: const [],
+      members: const [_alex, _sam],
+      sharedWalletIds: const {9},
+    );
+    expect(r.spent, 500);
+    expect(r.income, 0);
+    expect(r.txnCount, 2);
+    expect(r.sharedWalletSpent, 400);
+  });
 }

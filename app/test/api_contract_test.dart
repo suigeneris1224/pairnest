@@ -213,6 +213,19 @@ void main() {
     await expectLater(sam.moveMoney(fromWalletId: gcash.id, toWalletId: ours.id, amount: 1), throwsA(anything));
     await alex.deleteTransaction(topUp.transaction.id);
     expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
+    // Paydays land in a wallet, bills are paid from one, goal savings come from one.
+    final pay = await alex.addPayday(PaydayDraft(title: 'Bonus', amount: 900, frequency: 'weekly', nextOn: month, walletId: gcash.id));
+    expect(pay.walletId, gcash.id);
+    await alex.receivePayday(pay.id);
+    final wifi = await alex.addBill(
+      BillDraft(title: 'Wifi', amount: 1500, category: 'bills', frequency: 'monthly', nextDueOn: month, walletId: gcash.id),
+    );
+    expect(wifi.walletId, gcash.id);
+    final paidBill = await alex.payBill(wifi.id);
+    final savedGoal = (await alex.goals()).first;
+    await alex.contribute(savedGoal.id, 100, walletId: gcash.id);
+    expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100 + 900 - 1500 - 100);
+    expect((await alex.transactions(month: month)).firstWhere((t) => t.id == paidBill.transactionId).walletId, gcash.id);
     await alex.archiveWallet(card.id);
     expect((await alex.wallets()).map((w) => w.id), isNot(contains(card.id)));
 

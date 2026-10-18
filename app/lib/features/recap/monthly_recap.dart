@@ -32,6 +32,7 @@ class MonthlyRecap {
     required this.topMood,
     required this.txnCount,
     required this.biggestExpense,
+    this.sharedWalletSpent = 0,
   });
 
   factory MonthlyRecap.build({
@@ -42,6 +43,7 @@ class MonthlyRecap {
     required List<Goal> goals,
     required List<Mood> moods,
     required List<Member> members,
+    Set<int> sharedWalletIds = const {},
   }) {
     bool inMonth(DateTime d) => d.year == month.year && d.month == month.month;
     // Moves between wallets are neither spending nor income.
@@ -119,6 +121,7 @@ class MonthlyRecap {
       topMood: topMood,
       txnCount: monthTxns.length,
       biggestExpense: biggest,
+      sharedWalletSpent: sum(expenses.where((t) => sharedWalletIds.contains(t.walletId))),
     );
   }
 
@@ -142,6 +145,9 @@ class MonthlyRecap {
   final String? topMood;
   final int txnCount;
   final Txn? biggestExpense;
+
+  /// Paid from shared wallets: the pot, not either partner.
+  final double sharedWalletSpent;
 
   bool get isEmpty => txnCount == 0 && checkIns == 0;
 

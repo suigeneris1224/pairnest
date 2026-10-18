@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../core/motion/motion.dart';
@@ -340,6 +341,8 @@ class _Details extends ConsumerWidget {
         SectionCard(
           icon: Icons.receipt_long_rounded,
           title: 'This month',
+          action: 'See all',
+          onAction: () => context.go('/activity?wallet=${wallet.id}'),
           child: mine.isEmpty
               ? Padding(
                   padding: const EdgeInsets.only(bottom: 4),

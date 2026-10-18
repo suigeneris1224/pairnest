@@ -301,6 +301,11 @@ class _RecapCard extends ConsumerWidget {
                         ),
                       ),
                     Text('${r.paidBy.first.member.name} covered ${(r.paidBy.first.share * 100).round()}% of spending.', style: muted),
+                    if (r.sharedWalletSpent > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('${money(r.sharedWalletSpent)} of it came from your shared wallets.', style: muted),
+                      ),
                   ],
                 ),
               ),

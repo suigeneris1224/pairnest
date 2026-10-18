@@ -110,6 +110,21 @@ class Wallet extends Model
         return $wallet;
     }
 
+    /**
+     * The wallet to log with: $id when $userId may still use it, else null.
+     * For remembered links (a bill's or payday's wallet) that may have been
+     * archived since, or belong to the other partner.
+     */
+    public static function quietly(Couple $couple, ?int $id, int $userId): ?self
+    {
+        if ($id === null) {
+            return null;
+        }
+        $wallet = $couple->wallets()->active()->find($id);
+
+        return $wallet && $wallet->usableBy($userId) ? $wallet : null;
+    }
+
     public function scopeActive(Builder $query): void
     {
         $query->whereNull('archived_at');

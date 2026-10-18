@@ -10,7 +10,7 @@ class Bill extends Model
 {
     public const FREQUENCIES = ['monthly', 'weekly'];
 
-    protected $fillable = ['user_id', 'title', 'amount', 'category', 'frequency', 'next_due_on', 'anchor_day', 'is_split'];
+    protected $fillable = ['user_id', 'wallet_id', 'title', 'amount', 'category', 'frequency', 'next_due_on', 'anchor_day', 'is_split'];
 
     protected $hidden = ['anchor_day'];
 

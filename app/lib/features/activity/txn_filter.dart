@@ -8,7 +8,13 @@ enum SplitFilter { any, shared, personal }
 
 /// Which transactions Activity shows. Everything empty or "any" shows all.
 class TxnFilter {
-  const TxnFilter({this.kinds = const {}, this.categories = const {}, this.payer = Payer.anyone, this.split = SplitFilter.any});
+  const TxnFilter({
+    this.kinds = const {},
+    this.categories = const {},
+    this.payer = Payer.anyone,
+    this.split = SplitFilter.any,
+    this.wallets = const {},
+  });
 
   static const none = TxnFilter();
 
@@ -20,8 +26,15 @@ class TxnFilter {
   final Payer payer;
   final SplitFilter split;
 
+  /// Wallet ids: money paid from, received into or moved through any of them.
+  final Set<int> wallets;
+
   int get activeCount =>
-      (kinds.isEmpty ? 0 : 1) + (categories.isEmpty ? 0 : 1) + (payer == Payer.anyone ? 0 : 1) + (split == SplitFilter.any ? 0 : 1);
+      (kinds.isEmpty ? 0 : 1) +
+      (categories.isEmpty ? 0 : 1) +
+      (payer == Payer.anyone ? 0 : 1) +
+      (split == SplitFilter.any ? 0 : 1) +
+      (wallets.isEmpty ? 0 : 1);
 
   bool get isActive => activeCount > 0;
 
@@ -37,6 +50,7 @@ class TxnFilter {
     if (payer == Payer.partner && t.userId == meId) return false;
     if (split == SplitFilter.shared && !t.isSplit) return false;
     if (split == SplitFilter.personal && t.isSplit) return false;
+    if (wallets.isNotEmpty && !wallets.contains(t.walletId) && !wallets.contains(t.toWalletId)) return false;
     return true;
   }
 
@@ -47,10 +61,11 @@ class TxnFilter {
         ]
       : txns;
 
-  TxnFilter copyWith({Set<TxnKind>? kinds, Set<String>? categories, Payer? payer, SplitFilter? split}) => TxnFilter(
+  TxnFilter copyWith({Set<TxnKind>? kinds, Set<String>? categories, Payer? payer, SplitFilter? split, Set<int>? wallets}) => TxnFilter(
     kinds: kinds ?? this.kinds,
     categories: categories ?? this.categories,
     payer: payer ?? this.payer,
     split: split ?? this.split,
+    wallets: wallets ?? this.wallets,
   );
 }

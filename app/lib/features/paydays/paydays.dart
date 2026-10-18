@@ -8,6 +8,7 @@ import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/nest_ui.dart';
+import '../../core/widgets/wallet_picker.dart';
 import '../../data/models.dart';
 import '../../data/payday_schedule.dart';
 import '../../data/providers.dart';
@@ -26,7 +27,7 @@ Future<void> receivePayday(BuildContext context, WidgetRef ref, Payday payday) a
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
-    builder: (_) => _ReceiveSheet(payday),
+    builder: (_) => _ReceiveSheet(payday, walletName: walletNameOf(ref, payday.walletId)),
   );
   if (amount == null || !context.mounted) return;
   final repo = ref.read(repositoryProvider);
@@ -51,9 +52,12 @@ Future<void> receivePayday(BuildContext context, WidgetRef ref, Payday payday) a
 }
 
 class _ReceiveSheet extends StatefulWidget {
-  const _ReceiveSheet(this.payday);
+  const _ReceiveSheet(this.payday, {this.walletName});
 
   final Payday payday;
+
+  /// Where it lands, e.g. "BPI".
+  final String? walletName;
 
   @override
   State<_ReceiveSheet> createState() => _ReceiveSheetState();
@@ -107,7 +111,9 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
               ),
               const SizedBox(height: 8),
               Text(
-                "It's logged as income today. Change the amount if this one was different.",
+                widget.walletName == null
+                    ? "It's logged as income today. Change the amount if this one was different."
+                    : "It's logged as income in ${widget.walletName} today. Change the amount if this one was different.",
                 style: TextStyle(color: p.muted, fontSize: 12.5, height: 1.4),
               ),
               const SizedBox(height: 18),
@@ -221,6 +227,7 @@ class PaydaysSection extends ConsumerWidget {
             days: payday.days,
             nextOn: payday.nextOn,
             isSplit: payday.isSplit,
+            walletId: payday.walletId,
           ),
         );
         if (context.mounted) invalidateMoney(ref);
@@ -302,6 +309,7 @@ class _PaydayEditorState extends ConsumerState<PaydayEditor> {
   late int _dayB = (_existing?.days.length ?? 0) > 1 ? _existing!.days[1] : 30;
   late DateTime _next = _existing?.nextOn ?? DateTime.now();
   late bool _split = _existing?.isSplit ?? true;
+  late int? _walletId = _existing?.walletId;
   bool _busy = false;
 
   String get _freq => payFrequencies[_frequency];
@@ -345,6 +353,7 @@ class _PaydayEditorState extends ConsumerState<PaydayEditor> {
       },
       nextOn: isByDay(_freq) ? null : _next,
       isSplit: _split,
+      walletId: _walletId,
     );
     setState(() => _busy = true);
     try {
@@ -434,6 +443,7 @@ class _PaydayEditorState extends ConsumerState<PaydayEditor> {
                 padding: const EdgeInsets.only(top: 6, left: 4),
                 child: Text('Short months use their last day.', style: TextStyle(color: p.muted, fontSize: 12)),
               ),
+            WalletDropdown(label: 'Lands in', value: _walletId, onChanged: (id) => setState(() => _walletId = id)),
             SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               title: const Text('Shared money'),

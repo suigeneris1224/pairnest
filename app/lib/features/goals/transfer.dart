@@ -8,6 +8,7 @@ import '../../core/mascot/mascot.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/nest_ui.dart';
+import '../../core/widgets/wallet_picker.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import 'goals_screen.dart';
@@ -15,19 +16,20 @@ import 'goals_screen.dart';
 /// Moves money into a goal ([goal] preselected, else the first), logs it in
 /// Activity and offers Undo.
 Future<void> openTransfer(BuildContext context, WidgetRef ref, {Goal? goal}) async {
-  final picked = await showModalBottomSheet<(Goal, double)>(
+  final picked = await showModalBottomSheet<(Goal, double, int?)>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
     builder: (_) => _TransferSheet(initial: goal),
   );
   if (picked == null || !context.mounted) return;
-  final (target, amount) = picked;
+  final (target, amount, walletId) = picked;
   final repo = ref.read(repositoryProvider);
   final messenger = ScaffoldMessenger.of(context);
   final container = ProviderScope.containerOf(context, listen: false);
   try {
-    final result = await repo.contribute(target.id, amount);
+    if (walletId != null) ref.read(prefsProvider).setInt(_lastTransferWalletKey, walletId);
+    final result = await repo.contribute(target.id, amount, walletId: walletId);
     invalidateMoney(ref);
     HapticFeedback.lightImpact();
     final reached = target.saved < target.target && result.goal.saved >= result.goal.target;
@@ -48,6 +50,8 @@ Future<void> openTransfer(BuildContext context, WidgetRef ref, {Goal? goal}) asy
     showSnackOn(messenger, friendlyError(e));
   }
 }
+
+const _lastTransferWalletKey = 'last_transfer_wallet_id';
 
 /// A short celebration when a transfer completes a goal: the birds bounce,
 /// flap and send up hearts.
@@ -97,6 +101,7 @@ class _TransferSheet extends ConsumerStatefulWidget {
 class _TransferSheetState extends ConsumerState<_TransferSheet> {
   final _amount = TextEditingController();
   late int? _goalId = widget.initial?.id;
+  late int? _walletId = ref.read(prefsProvider).getInt(_lastTransferWalletKey);
 
   @override
   void initState() {
@@ -111,6 +116,13 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
   }
 
   double? get _value => double.tryParse(_amount.text.replaceAll(',', ''));
+
+  /// The remembered wallet only if it's still one you can use.
+  int? _usableWallet() {
+    final me = ref.read(meProvider).user.id;
+    final wallets = ref.read(walletsProvider).value ?? const <Wallet>[];
+    return wallets.any((w) => w.id == _walletId && w.usableBy(me)) ? _walletId : null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -192,9 +204,10 @@ class _TransferSheetState extends ConsumerState<_TransferSheet> {
           inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
           decoration: const InputDecoration(labelText: 'Amount', prefixText: '₱ '),
         ),
+        WalletDropdown(label: 'From', value: _walletId, onChanged: (id) => setState(() => _walletId = id)),
         const SizedBox(height: 16),
         FilledButton(
-          onPressed: valid ? () => Navigator.pop(context, (goal, v)) : null,
+          onPressed: valid ? () => Navigator.pop(context, (goal, v, _usableWallet())) : null,
           child: Text(
             valid ? 'Transfer ${peso(v)} to ${goal.name}' : 'Transfer to ${goal.name}',
             maxLines: 1,

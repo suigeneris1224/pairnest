@@ -202,6 +202,7 @@ final recapProvider = FutureProvider.family<MonthlyRecap, DateTime>((ref, month)
   final budget = await ref.watch(budgetProvider(m).future);
   final goals = await ref.watch(goalsProvider.future);
   final moods = await ref.watch(moodsProvider.future);
+  final wallets = await ref.watch(walletsProvider.future);
   return MonthlyRecap.build(
     month: m,
     txns: results[0],
@@ -210,6 +211,7 @@ final recapProvider = FutureProvider.family<MonthlyRecap, DateTime>((ref, month)
     goals: goals,
     moods: moods,
     members: ref.read(meProvider).couple?.members ?? const [],
+    sharedWalletIds: {for (final w in wallets.where((w) => w.isShared)) w.id},
   );
 });
 

@@ -7,12 +7,16 @@ import '../../core/theme/palettes.dart';
 import '../../core/widgets/categories.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/nest_ui.dart';
+import '../../core/widgets/wallet_picker.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 
 /// Asks to confirm, then logs this period's payment and moves the bill on.
 Future<void> payBill(BuildContext context, WidgetRef ref, Bill bill) async {
   final p = context.pn;
+  // The bill's wallet, if whoever's paying can use it.
+  final me = ref.read(meProvider).user.id;
+  final wallet = knownWallets(ref).where((w) => w.id == bill.walletId && w.usableBy(me)).firstOrNull;
   final ok = await showModalBottomSheet<bool>(
     context: context,
     useRootNavigator: true,
@@ -44,7 +48,7 @@ Future<void> payBill(BuildContext context, WidgetRef ref, Bill bill) async {
             ),
             const SizedBox(height: 14),
             Text(
-              '${peso(bill.amount)} will be logged as an expense today, and the next one will be due '
+              '${peso(bill.amount)} will be logged as an expense today${wallet == null ? '' : ' from ${wallet.name}'}, and the next one will be due '
               '${bill.isWeekly ? 'in a week' : 'next month'}.',
               style: TextStyle(color: p.muted, height: 1.4),
             ),
@@ -179,6 +183,7 @@ class BillsSection extends ConsumerWidget {
             frequency: bill.frequency,
             nextDueOn: bill.nextDueOn,
             isSplit: bill.isSplit,
+            walletId: bill.walletId,
           ),
         );
         if (context.mounted) invalidateMoney(ref);
@@ -255,6 +260,7 @@ class _BillEditorState extends ConsumerState<BillEditor> {
   late bool _weekly = _existing?.isWeekly ?? false;
   late DateTime _due = _existing?.nextDueOn ?? DateTime.now();
   late bool _split = _existing?.isSplit ?? true;
+  late int? _walletId = _existing?.walletId;
   bool _busy = false;
 
   @override
@@ -288,6 +294,7 @@ class _BillEditorState extends ConsumerState<BillEditor> {
       frequency: _weekly ? 'weekly' : 'monthly',
       nextDueOn: _due,
       isSplit: _split,
+      walletId: _walletId,
     );
     setState(() => _busy = true);
     try {
@@ -352,6 +359,7 @@ class _BillEditorState extends ConsumerState<BillEditor> {
                 child: Text(longDate(_due)),
               ),
             ),
+            WalletDropdown(label: 'Paid from', value: _walletId, onChanged: (id) => setState(() => _walletId = id)),
             SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               title: const Text('Split with partner'),

@@ -45,4 +45,26 @@ void main() {
     expect(ids(all), [1]);
     expect(all.activeCount, 4);
   });
+
+  test('wallet: paid from, received into or moved through it', () {
+    Txn w(int id, {String type = 'expense', int? wallet, int? to}) => Txn(
+      id: id,
+      userId: 1,
+      userName: 'Alex',
+      type: type,
+      amount: 100,
+      category: 'food',
+      title: 'W$id',
+      paymentMethod: 'cash',
+      isSplit: false,
+      occurredOn: DateTime(2028, 3, 1),
+      walletId: wallet,
+      toWalletId: to,
+    );
+    final list = [w(1, wallet: 7), w(2, wallet: 8), w(3, type: 'move', wallet: 8, to: 7), w(4)];
+    const f = TxnFilter(wallets: {7});
+    expect([for (final t in f.apply(list, 1)) t.id], [1, 3]);
+    expect(f.activeCount, 1);
+    expect(f.copyWith(wallets: {}).isActive, isFalse);
+  });
 }

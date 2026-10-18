@@ -12,13 +12,18 @@ import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
 import '../../data/models.dart';
 import '../../core/widgets/categories.dart';
+import '../../core/widgets/wallet_brands.dart';
+import '../../core/widgets/bank_card.dart';
 import '../../data/providers.dart';
 import 'txn_filter.dart';
 import 'txn_tile.dart';
 
 /// Transaction history with month switcher and search.
 class ActivityScreen extends ConsumerStatefulWidget {
-  const ActivityScreen({super.key});
+  const ActivityScreen({super.key, this.walletId});
+
+  /// Opens filtered to this wallet, e.g. from its card's "See all".
+  final int? walletId;
 
   @override
   ConsumerState<ActivityScreen> createState() => _ActivityScreenState();
@@ -30,8 +35,17 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   /// A custom period instead of [_month].
   DateTimeRange? _range;
   String _query = '';
-  TxnFilter _filter = TxnFilter.none;
+  late TxnFilter _filter = widget.walletId == null ? TxnFilter.none : TxnFilter(wallets: {widget.walletId!});
   Timer? _debounce;
+
+  @override
+  void didUpdateWidget(ActivityScreen old) {
+    super.didUpdateWidget(old);
+    // The tab stays alive, so a new ?wallet= arrives here rather than in a new state.
+    if (widget.walletId != null && widget.walletId != old.walletId) {
+      _filter = TxnFilter(wallets: {widget.walletId!});
+    }
+  }
 
   @override
   void dispose() {
@@ -111,6 +125,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   Widget build(BuildContext context) {
     final p = context.pn;
     final me = ref.watch(meProvider);
+    final walletNames = {for (final w in ref.watch(walletsProvider).value ?? const <Wallet>[]) w.id: w.name};
     final txns = ref.watch(_source);
     final range = _range;
 
@@ -203,6 +218,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                     ),
                     _ActiveFilters(
                       filter: _filter,
+                      walletNames: walletNames,
                       partnerName: me.partner?.name ?? 'partner',
                       onChanged: (f) => setState(() => _filter = f),
                     ),
@@ -226,6 +242,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                       ),
                       final shown when shown.isNotEmpty => _GroupedList(
                         shown,
+                        walletNames: walletNames,
                         filtered: _filter.isActive || range != null || _query.isNotEmpty,
                         // Transfers aren't editable; their goal is where they live.
                         onEdit: (t) => t.isTransfer || t.isRelease
@@ -265,9 +282,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 String _rangeLabel(DateTimeRange r) => '${shortDate(r.start)} – ${shortDate(r.end)}';
 
 class _GroupedList extends StatelessWidget {
-  const _GroupedList(this.txns, {required this.onEdit, required this.onDelete, this.filtered = false});
+  const _GroupedList(this.txns, {required this.onEdit, required this.onDelete, this.filtered = false, this.walletNames = const {}});
 
   final List<Txn> txns;
+  final Map<int, String> walletNames;
 
   /// Showing a search, filter or custom range rather than the whole month.
   final bool filtered;
@@ -340,7 +358,7 @@ class _GroupedList extends StatelessWidget {
                       direction: t.isRelease ? DismissDirection.none : DismissDirection.endToStart,
                       background: const _DeleteBackground(),
                       onDismissed: (_) => onDelete(t),
-                      child: TxnTile(t, onTap: () => onEdit(t)),
+                      child: TxnTile(t, walletName: walletNames[t.walletId], onTap: () => onEdit(t)),
                     ),
                 ],
               ),
@@ -404,9 +422,10 @@ class _HeroFigure extends StatelessWidget {
 
 /// Removable chips for each active filter; nothing when none are on.
 class _ActiveFilters extends StatelessWidget {
-  const _ActiveFilters({required this.filter, required this.partnerName, required this.onChanged});
+  const _ActiveFilters({required this.filter, required this.partnerName, required this.onChanged, this.walletNames = const {}});
 
   final TxnFilter filter;
+  final Map<int, String> walletNames;
   final String partnerName;
   final ValueChanged<TxnFilter> onChanged;
 
@@ -421,6 +440,7 @@ class _ActiveFilters extends StatelessWidget {
         (filter.payer == Payer.me ? 'Paid by me' : 'Paid by $partnerName', filter.copyWith(payer: Payer.anyone)),
       if (filter.split != SplitFilter.any)
         (filter.split == SplitFilter.shared ? 'Shared' : 'Personal', filter.copyWith(split: SplitFilter.any)),
+      for (final w in filter.wallets) (walletNames[w] ?? 'Wallet', filter.copyWith(wallets: {...filter.wallets}..remove(w))),
     ];
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -469,6 +489,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
     final me = ref.watch(meProvider);
     final partner = me.partner;
     final count = _f.apply(widget.base, me.user.id).length;
+    final wallets = ref.watch(walletsProvider).value ?? const <Wallet>[];
     Widget label(String text) => Padding(
       padding: const EdgeInsets.only(top: 16, bottom: 8),
       child: Text(
@@ -525,6 +546,23 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                     index: _f.split.index,
                     onChanged: (i) => setState(() => _f = _f.copyWith(split: SplitFilter.values[i])),
                   ),
+                  if (wallets.isNotEmpty) ...[
+                    label('WALLET'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final w in wallets)
+                          FilterChip(
+                            avatar: BrandBadge(brandOf(w.provider), size: 20),
+                            label: Text(w.name),
+                            selected: _f.wallets.contains(w.id),
+                            onSelected: (on) =>
+                                setState(() => _f = _f.copyWith(wallets: on ? {..._f.wallets, w.id} : ({..._f.wallets}..remove(w.id)))),
+                          ),
+                      ],
+                    ),
+                  ],
                   label('CATEGORY'),
                   Wrap(
                     spacing: 8,

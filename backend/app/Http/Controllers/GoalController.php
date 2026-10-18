@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Goal;
 use App\Models\Transaction;
+use App\Models\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -51,21 +52,27 @@ class GoalController extends Controller
     public function contribute(Request $request, int $id): JsonResponse
     {
         $goal = $request->user()->couple->goals()->findOrFail($id);
-        $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0', 'max:9999999999']]);
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
+            'wallet_id' => ['sometimes', 'nullable', 'integer'],
+        ]);
         if ($goal->cancelled_at) {
             throw ValidationException::withMessages(['goal' => 'Restore this goal before adding to it.']);
         }
+        $wallet = empty($data['wallet_id']) ? null : Wallet::usable($request->user()->couple, $data['wallet_id'], $request->user()->id);
+        unset($data['wallet_id']);
 
         // Logged as a transfer so it shows in Activity and can be undone by deleting it.
-        $transfer = DB::transaction(function () use ($request, $goal, $data) {
+        $transfer = DB::transaction(function () use ($request, $goal, $data, $wallet) {
             $transfer = $request->user()->couple->transactions()->create([
                 'user_id' => $request->user()->id,
                 'goal_id' => $goal->id,
+                'wallet_id' => $wallet?->id,
                 'type' => 'transfer',
                 'amount' => $data['amount'],
                 'category' => Transaction::TRANSFER_CATEGORY,
                 'title' => "Transfer to {$goal->name}",
-                'payment_method' => 'bank',
+                'payment_method' => $wallet?->paymentMethod() ?? 'bank',
                 'is_split' => false,
                 'occurred_on' => CarbonImmutable::now()->toDateString(),
             ]);

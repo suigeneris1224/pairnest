@@ -7,10 +7,13 @@ import '../../core/widgets/nest_ui.dart';
 import '../../data/models.dart';
 
 class TxnTile extends StatelessWidget {
-  const TxnTile(this.txn, {super.key, this.onTap});
+  const TxnTile(this.txn, {super.key, this.onTap, this.walletName});
 
   final Txn txn;
   final VoidCallback? onTap;
+
+  /// "GCash" when it was paid from or received into a wallet.
+  final String? walletName;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +57,7 @@ class TxnTile extends StatelessWidget {
                     [
                       txn.isMove ? 'Moved between wallets' : style.label,
                       if (txn.userName.isNotEmpty) txn.userName,
+                      if (walletName != null && !txn.isMove) walletName!,
                       if (txn.isSplit) 'Split',
                     ].join(' · '),
                     maxLines: 1,

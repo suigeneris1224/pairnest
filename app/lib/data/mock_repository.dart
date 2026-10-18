@@ -398,6 +398,7 @@ class MockRepository implements PairnestRepository {
     nextDueOn: d.nextDueOn,
     isSplit: d.isSplit,
     userName: userName,
+    walletId: _checkWallet(d.walletId, _user.id),
   );
 
   int _billIndex(int id) {
@@ -499,6 +500,7 @@ class MockRepository implements PairnestRepository {
         paymentMethod: 'cash',
         isSplit: b.isSplit,
         occurredOn: DateTime(now.year, now.month, now.day),
+        walletId: _quietWallet(b.walletId, _user.id),
       ),
     );
     final due = b.nextDueOn;
@@ -526,6 +528,7 @@ class MockRepository implements PairnestRepository {
     nextDueOn: due,
     isSplit: b.isSplit,
     userName: b.userName,
+    walletId: b.walletId,
   );
 
   /// Money in minus money out per wallet, like the server's Wallet::flows.
@@ -555,6 +558,12 @@ class MockRepository implements PairnestRepository {
     final w = _wallets.where((w) => w.id == id).firstOrNull;
     if (w == null || !w.usableBy(userId)) throw Exception('Pick one of your wallets or a shared one.');
     return id;
+  }
+
+  /// A remembered wallet if [userId] can still use it, else none.
+  int? _quietWallet(int? id, int userId) {
+    final w = _wallets.where((w) => w.id == id).firstOrNull;
+    return w != null && w.usableBy(userId) ? w.id : null;
   }
 
   String _walletPaymentMethod(int id) {
@@ -672,6 +681,7 @@ class MockRepository implements PairnestRepository {
       days: days,
       nextOn: nextOn ?? (isByDay(d.frequency) ? firstPaydayOnOrAfter(days, now) : d.nextOn!),
       isSplit: d.isSplit,
+      walletId: _checkWallet(d.walletId, _user.id),
     );
   }
 
@@ -685,6 +695,7 @@ class MockRepository implements PairnestRepository {
     days: d.days,
     nextOn: nextOn,
     isSplit: d.isSplit,
+    walletId: d.walletId,
   );
 
   @override
@@ -716,6 +727,7 @@ class MockRepository implements PairnestRepository {
         paymentMethod: 'bank',
         isSplit: d.isSplit,
         occurredOn: DateTime(now.year, now.month, now.day),
+        walletId: _quietWallet(d.walletId, d.userId),
       ),
     );
     final moved = _withNext(d, nextPayday(d.frequency, d.nextOn, d.days));
@@ -898,7 +910,7 @@ class MockRepository implements PairnestRepository {
   });
 
   @override
-  Future<({Goal goal, int? transferId})> contribute(int goalId, double amount) => _delay(() {
+  Future<({Goal goal, int? transferId})> contribute(int goalId, double amount, {int? walletId}) => _delay(() {
     if (_goals.where((g) => g.id == goalId && g.cancelled).isNotEmpty) throw Exception('Restore this goal before adding to it.');
     final goal = _addToGoal(goalId, amount);
     if (goal == null) throw Exception('That goal no longer exists.');
@@ -914,6 +926,7 @@ class MockRepository implements PairnestRepository {
       paymentMethod: 'bank',
       isSplit: false,
       occurredOn: DateTime(now.year, now.month, now.day),
+      walletId: _checkWallet(walletId, _user.id),
       goalId: goalId,
     );
     _txns.add(transfer);

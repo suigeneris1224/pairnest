@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Bill;
 use App\Models\Transaction;
+use App\Models\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,7 @@ class BillController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+        $this->checkWallet($request, $data);
         $bill = $request->user()->couple->bills()->create(
             $data + ['user_id' => $request->user()->id, 'anchor_day' => CarbonImmutable::parse($data['next_due_on'])->day]
         );
@@ -34,6 +36,7 @@ class BillController extends Controller
     {
         $bill = $request->user()->couple->bills()->findOrFail($id);
         $data = $this->validated($request, partial: true);
+        $this->checkWallet($request, $data);
         if (isset($data['next_due_on'])) {
             $data['anchor_day'] = CarbonImmutable::parse($data['next_due_on'])->day;
         }
@@ -53,16 +56,25 @@ class BillController extends Controller
     public function pay(Request $request, int $id): JsonResponse
     {
         $bill = $request->user()->couple->bills()->findOrFail($id);
-        $data = $request->validate(['payment_method' => ['sometimes', Rule::in(Transaction::PAYMENT_METHODS)]]);
+        $data = $request->validate([
+            'payment_method' => ['sometimes', Rule::in(Transaction::PAYMENT_METHODS)],
+            'wallet_id' => ['sometimes', 'nullable', 'integer'],
+        ]);
+        $couple = $request->user()->couple;
+        // A wallet picked now must be usable; the bill's usual one is skipped if it isn't.
+        $wallet = array_key_exists('wallet_id', $data)
+            ? ($data['wallet_id'] === null ? null : Wallet::usable($couple, $data['wallet_id'], $request->user()->id))
+            : Wallet::quietly($couple, $bill->wallet_id, $request->user()->id);
 
-        $transaction = DB::transaction(function () use ($request, $bill, $data) {
+        $transaction = DB::transaction(function () use ($request, $bill, $data, $wallet) {
             $transaction = $request->user()->couple->transactions()->create([
                 'user_id' => $request->user()->id,
                 'type' => 'expense',
                 'amount' => $bill->amount,
                 'category' => $bill->category,
                 'title' => $bill->title,
-                'payment_method' => $data['payment_method'] ?? 'cash',
+                'wallet_id' => $wallet?->id,
+                'payment_method' => $wallet?->paymentMethod() ?? $data['payment_method'] ?? 'cash',
                 'is_split' => $bill->is_split,
                 'occurred_on' => CarbonImmutable::today()->toDateString(),
             ]);
@@ -106,6 +118,13 @@ class BillController extends Controller
         return response()->json($bill->load('user:id,name'));
     }
 
+    private function checkWallet(Request $request, array $data): void
+    {
+        if (! empty($data['wallet_id'])) {
+            Wallet::usable($request->user()->couple, $data['wallet_id'], $request->user()->id);
+        }
+    }
+
     private function validated(Request $request, bool $partial = false): array
     {
         $req = $partial ? 'sometimes' : 'required';
@@ -117,6 +136,7 @@ class BillController extends Controller
             'frequency' => ['sometimes', Rule::in(Bill::FREQUENCIES)],
             'next_due_on' => [$req, 'date_format:Y-m-d'],
             'is_split' => ['sometimes', 'boolean'],
+            'wallet_id' => ['sometimes', 'nullable', 'integer'],
         ]);
     }
 }

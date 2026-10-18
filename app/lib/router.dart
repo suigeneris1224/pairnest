@@ -113,7 +113,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/activity', pageBuilder: (_, state) => _page(state, const ActivityScreen()))],
+            routes: [
+              GoRoute(
+                path: '/activity',
+                pageBuilder: (_, state) => _page(state, ActivityScreen(walletId: int.tryParse(state.uri.queryParameters['wallet'] ?? ''))),
+              ),
+            ],
           ),
           StatefulShellBranch(
             routes: [

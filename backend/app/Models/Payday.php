@@ -13,7 +13,7 @@ class Payday extends Model
     /** Frequencies set by days of the month rather than a start date. */
     public const BY_DAY = ['semimonthly', 'monthly'];
 
-    protected $fillable = ['user_id', 'title', 'amount', 'frequency', 'next_on', 'day_a', 'day_b', 'is_split'];
+    protected $fillable = ['user_id', 'wallet_id', 'title', 'amount', 'frequency', 'next_on', 'day_a', 'day_b', 'is_split'];
 
     protected $hidden = ['day_a', 'day_b'];
 

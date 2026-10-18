@@ -340,6 +340,7 @@ class Bill {
     required this.nextDueOn,
     this.isSplit = true,
     this.userName = '',
+    this.walletId,
   });
 
   factory Bill.fromJson(Map<String, dynamic> j) => Bill(
@@ -351,6 +352,7 @@ class Bill {
     nextDueOn: DateTime.parse(j['next_due_on'] as String),
     isSplit: j['is_split'] == true || j['is_split'] == 1,
     userName: ((j['user'] as Map?)?['name'] ?? '') as String,
+    walletId: j['wallet_id'] as int?,
   );
 
   final int id;
@@ -361,6 +363,9 @@ class Bill {
   final DateTime nextDueOn;
   final bool isSplit;
   final String userName;
+
+  /// The wallet that usually pays it.
+  final int? walletId;
 
   bool get isWeekly => frequency == 'weekly';
 
@@ -396,6 +401,7 @@ class BillDraft {
     required this.frequency,
     required this.nextDueOn,
     this.isSplit = true,
+    this.walletId,
   });
 
   final String title;
@@ -404,6 +410,7 @@ class BillDraft {
   final String frequency;
   final DateTime nextDueOn;
   final bool isSplit;
+  final int? walletId;
 }
 
 /// One partner's pay schedule. Logging it on payday records income.
@@ -418,6 +425,7 @@ class Payday {
     this.days = const [],
     this.isSplit = true,
     this.userName = '',
+    this.walletId,
   });
 
   factory Payday.fromJson(Map<String, dynamic> j) => Payday(
@@ -430,6 +438,7 @@ class Payday {
     days: [for (final d in (j['days'] ?? const []) as List) (d as num).toInt()],
     isSplit: j['is_split'] == true || j['is_split'] == 1,
     userName: ((j['user'] as Map?)?['name'] ?? '') as String,
+    walletId: j['wallet_id'] as int?,
   );
 
   final int id;
@@ -445,6 +454,9 @@ class Payday {
   final List<int> days;
   final bool isSplit;
   final String userName;
+
+  /// Where the pay lands.
+  final int? walletId;
 
   /// Whole days until payday; zero on the day, negative once it's passed unlogged.
   int daysUntil(DateTime now) => DateTime(nextOn.year, nextOn.month, nextOn.day).difference(DateTime(now.year, now.month, now.day)).inDays;
@@ -482,6 +494,7 @@ class PaydayDraft {
     this.days = const [],
     this.nextOn,
     this.isSplit = true,
+    this.walletId,
   });
 
   final String title;
@@ -494,6 +507,7 @@ class PaydayDraft {
   /// For weekly and every-2-weeks pay.
   final DateTime? nextOn;
   final bool isSplit;
+  final int? walletId;
 }
 
 /// One partner paying the other back for shared expenses.

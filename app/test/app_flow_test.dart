@@ -1123,4 +1123,68 @@ void main() {
     expect(find.text('⇄ ₱6,300'), findsWidgets);
     expect(find.textContaining('Moved between wallets'), findsWidgets);
   });
+
+  testWidgets('pay can land in a wallet, and its balance goes up when logged', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final payday = seededPayday(const [15, 30]);
+    final container = await _signedIn(tester, repo: repo, overrides: [nowProvider.overrideWithValue(() => payday)]);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    final salary = (await resolve(repo.paydays())).firstWhere((d) => d.userId == 1);
+    await resolve(
+      repo.updatePayday(salary.id, PaydayDraft(amount: salary.amount, frequency: salary.frequency, days: salary.days, walletId: 2)),
+    );
+    container.invalidate(dashboardProvider);
+    await _settle(tester);
+    await tester.tap(find.text('Log it'));
+    await _settle(tester);
+    expect(find.textContaining('logged as income in GCash today'), findsOneWidget);
+    await tester.tap(find.text('Log ₱22,500'));
+    await _settle(tester);
+    final gcash = (await resolve(repo.wallets())).firstWhere((w) => w.id == 2);
+    expect(gcash.balance, 4200 + 22500);
+  });
+
+  testWidgets("a wallet's See all opens Activity filtered to it", (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).go('/home/wallets?id=2');
+    await _settle(tester);
+    await tester.ensureVisible(find.text('See all'));
+    await tester.tap(find.text('See all'));
+    await _settle(tester);
+    expect(container.read(routerProvider).state.uri.path, '/activity');
+    expect(find.widgetWithText(InputChip, 'GCash'), findsOneWidget);
+    // (The Wallets page stays alive under Activity, so it can appear twice.)
+    expect(find.text('Electricity Bill'), findsWidgets);
+    expect(find.text('Weekly groceries'), findsNothing);
+    expect(find.textContaining('Bills & Utilities · Alex · GCash'), findsOneWidget);
+  });
+
+  testWidgets('saving toward a goal can come from a wallet', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    await tester.tap(find.text('Transfer'));
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(ChoiceChip, '₱1,000'));
+    await _settle(tester);
+    await tester.tap(find.text('No wallet'));
+    await _settle(tester);
+    await tester.tap(find.text('GCash').last);
+    await _settle(tester);
+    await tester.tap(find.textContaining('Transfer ₱1,000'));
+    await _settle(tester);
+    final gcash = (await resolve(repo.wallets())).firstWhere((w) => w.id == 2);
+    expect(gcash.balance, 3200);
+    expect(container0(tester).read(prefsProvider).getInt('last_transfer_wallet_id'), 2);
+  });
 }
+
+ProviderContainer container0(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(MaterialApp).first));

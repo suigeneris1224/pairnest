@@ -297,8 +297,9 @@ class ApiRepository implements PairnestRepository {
   Future<Goal> restoreGoal(int id) => _call(() async => Goal.fromJson((await _dio.post('goals/$id/restore')).data as Map<String, dynamic>));
 
   @override
-  Future<({Goal goal, int? transferId})> contribute(int goalId, double amount) => _call(() async {
-    final data = (await _dio.post('goals/$goalId/contributions', data: {'amount': amount})).data as Map<String, dynamic>;
+  Future<({Goal goal, int? transferId})> contribute(int goalId, double amount, {int? walletId}) => _call(() async {
+    final data =
+        (await _dio.post('goals/$goalId/contributions', data: {'amount': amount, 'wallet_id': ?walletId})).data as Map<String, dynamic>;
     return (goal: Goal.fromJson(data), transferId: data['transaction_id'] as int?);
   });
 
@@ -431,6 +432,7 @@ class ApiRepository implements PairnestRepository {
     'frequency': d.frequency,
     if (isByDay(d.frequency)) 'days': d.days else 'next_on': dayKey(d.nextOn!),
     'is_split': d.isSplit,
+    'wallet_id': d.walletId,
   };
 
   @override
@@ -452,6 +454,7 @@ class ApiRepository implements PairnestRepository {
     'frequency': d.frequency,
     'next_due_on': dayKey(d.nextDueOn),
     'is_split': d.isSplit,
+    'wallet_id': d.walletId,
   };
 
   @override
