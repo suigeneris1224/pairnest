@@ -11,6 +11,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FeedController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\MoodController;
+use App\Http\Controllers\MoveController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\SettlementController;
 use App\Http\Controllers\TalkController;
@@ -62,6 +63,7 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('paydays', PaydayController::class)->except('show');
             Route::apiResource('wallets', WalletController::class)->except('show');
             Route::post('wallets/{wallet}/balance', [WalletController::class, 'balance']);
+            Route::post('moves', [MoveController::class, 'store']);
             Route::post('paydays/{payday}/receive', [PaydayController::class, 'receive']);
             Route::post('paydays/{payday}/unreceive', [PaydayController::class, 'unreceive']);
             Route::get('balance', [SettlementController::class, 'balance']);

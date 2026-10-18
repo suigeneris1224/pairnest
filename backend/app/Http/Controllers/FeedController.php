@@ -38,6 +38,13 @@ class FeedController extends Controller
             ));
         }
 
+        // Top-ups into shared wallets.
+        foreach ($couple->transactions()->tap($notMe)->where('type', 'move')->whereNotNull('to_wallet_id')
+            ->whereIn('to_wallet_id', $couple->wallets()->whereNull('user_id')->select('id'))
+            ->with('user:id,name', 'toWallet:id,name')->latest()->limit(self::LIMIT)->get() as $t) {
+            $items->push($this->item('topup', $t->user->name, "{$t->user->name} topped up {$t->toWallet?->name}", null, $t->amount, $t->created_at));
+        }
+
         $contributions = GoalContribution::query()
             ->whereIn('goal_id', $couple->goals()->select('id'))
             ->tap($notMe)

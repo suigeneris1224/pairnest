@@ -44,9 +44,10 @@ class MonthlyRecap {
     required List<Member> members,
   }) {
     bool inMonth(DateTime d) => d.year == month.year && d.month == month.month;
+    // Moves between wallets are neither spending nor income.
     final monthTxns = [
       for (final t in txns)
-        if (inMonth(t.occurredOn)) t,
+        if (inMonth(t.occurredOn) && !t.isMove) t,
     ];
     final expenses = [
       for (final t in monthTxns)

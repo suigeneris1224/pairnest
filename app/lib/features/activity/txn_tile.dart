@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/format.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/categories.dart';
+import '../../core/widgets/nest_ui.dart';
 import '../../data/models.dart';
 
 class TxnTile extends StatelessWidget {
@@ -15,14 +16,16 @@ class TxnTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.pn;
     final style = categoryStyle(txn.category);
-    final sign = txn.isExpense
+    final sign = txn.isMove
+        ? '⇄ '
+        : txn.isExpense
         ? '- '
         : txn.isTransfer
         ? '→ '
         : txn.isRelease
         ? '← '
         : '+ ';
-    final amountColor = txn.isExpense
+    final amountColor = txn.isExpense || txn.isMove
         ? p.text
         : txn.isTransfer || txn.isRelease
         ? savingsCategory.color
@@ -34,7 +37,7 @@ class TxnTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            CategoryIcon(txn.category),
+            txn.isMove ? const PastelIcon(Icons.swap_horiz_rounded, tone: Pastel.sky, size: 44) : CategoryIcon(txn.category),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -48,7 +51,11 @@ class TxnTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    [style.label, if (txn.userName.isNotEmpty) txn.userName, if (txn.isSplit) 'Split'].join(' · '),
+                    [
+                      txn.isMove ? 'Moved between wallets' : style.label,
+                      if (txn.userName.isNotEmpty) txn.userName,
+                      if (txn.isSplit) 'Split',
+                    ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: p.muted),

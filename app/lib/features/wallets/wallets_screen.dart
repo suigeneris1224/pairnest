@@ -13,6 +13,7 @@ import '../../core/widgets/wallet_brands.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../activity/txn_tile.dart';
+import 'move_sheet.dart';
 import 'wallet_editor.dart';
 
 /// Every wallet as a card you can swipe through, with the chosen one's
@@ -293,6 +294,24 @@ class _Details extends ConsumerWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (wallet.isShared)
+                ActionChip(
+                  avatar: const Icon(Icons.add_card_rounded, size: 18),
+                  label: const Text('Top up'),
+                  onPressed: () => openMoveSheet(context, ref, to: wallet),
+                )
+              else if (wallet.isCredit && (wallet.balance ?? 0) < 0)
+                ActionChip(
+                  avatar: const Icon(Icons.credit_score_rounded, size: 18),
+                  label: const Text('Pay card'),
+                  onPressed: () => openMoveSheet(context, ref, to: wallet, amount: -(wallet.balance!)),
+                )
+              else
+                ActionChip(
+                  avatar: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: const Text('Move money'),
+                  onPressed: () => openMoveSheet(context, ref, from: wallet),
+                ),
               ActionChip(
                 avatar: const Icon(Icons.tune_rounded, size: 18),
                 label: const Text('Correct balance'),

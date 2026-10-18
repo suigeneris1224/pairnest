@@ -197,8 +197,33 @@ class _WhoPaidCard extends ConsumerWidget {
             SoftProgress(most == 0 ? 0 : m.paidThisMonth / most, color: memberColor(context, me.couple, m.id)),
             const SizedBox(height: 14),
           ],
+          if (balance.members.any((m) => m.toppedUpThisMonth > 0) || balance.sharedSpentThisMonth > 0) ...[
+            Text(
+              'Put into shared wallets',
+              style: TextStyle(color: p.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            for (final m in balance.members)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.account_balance_wallet_outlined, size: 16, color: memberColor(context, me.couple, m.id)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(m.id == me.user.id ? 'You' : m.name)),
+                    Text(hide ? '₱••••' : peso(m.toppedUpThisMonth), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            if (balance.sharedSpentThisMonth > 0)
+              Text(
+                '${hide ? '₱••••' : peso(balance.sharedSpentThisMonth)} spent from shared wallets this month',
+                style: TextStyle(color: p.muted, fontSize: 12.5),
+              ),
+            const SizedBox(height: 12),
+          ],
           Text(
-            "Split expenses are shared 50/50. Personal ones don't count toward the balance.",
+            "Split expenses are shared 50/50. Personal ones and spending from shared wallets don't count toward the balance.",
             style: TextStyle(color: p.muted, fontSize: 12.5, height: 1.4),
           ),
         ],

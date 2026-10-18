@@ -126,16 +126,31 @@ class MockRepository implements PairnestRepository {
       Wallet(id: 3, name: 'BPI Credit', kind: 'credit', provider: 'bpi', ownerId: _user.id, ownerName: _user.name, last4: '4821'),
       Wallet(id: 4, name: 'BDO Debit', kind: 'debit', provider: 'bdo', ownerId: _sam.id, ownerName: _sam.name, last4: '1029'),
     ]);
-    _openings.addAll({1: 9600, 2: 6630, 3: 0, 4: 19800});
+    _openings.addAll({1: 3000, 2: 6630, 3: 0, 4: 22800});
     _txns.addAll([
       t(1, _user, 'income', 45000, 'income', 'Salary', 'bank', false, 1),
       t(2, _user, 'expense', 3800, 'food', 'Weekly groceries', 'card', true, 3, 3),
-      t(3, _sam, 'expense', 3600, 'bills', 'Internet & water', 'maya', true, 5, 1),
+      t(3, _sam, 'expense', 3600, 'bills', 'Internet & water', 'gcash', true, 5),
       t(4, _sam, 'expense', 2400, 'transport', 'Fuel', 'cash', false, 6),
       t(5, _user, 'expense', 2500, 'shopping', 'Home essentials', 'card', false, 7, 3),
       t(6, _sam, 'expense', 1800, 'entertainment', 'Date Night', 'card', true, 8, 4),
       t(7, _user, 'expense', 2430, 'bills', 'Electricity Bill', 'gcash', true, 9, 2),
       t(8, _sam, 'expense', 1250, 'food', 'Groceries', 'cash', false, 10),
+      // Sam's share into Our Maya.
+      Txn(
+        id: 9,
+        userId: _sam.id,
+        userName: _sam.name,
+        type: 'move',
+        amount: 3000,
+        category: 'others',
+        title: 'Our share',
+        paymentMethod: 'card',
+        isSplit: false,
+        occurredOn: day(4),
+        walletId: 4,
+        toWalletId: 1,
+      ),
     ]);
 
     _goals.addAll([
@@ -413,7 +428,16 @@ class MockRepository implements PairnestRepository {
     if (members.length < 2) return const SplitBalance();
     final now = DateTime.now();
     double sum(Iterable<double> xs) => xs.fold(0, (a, b) => a + b);
-    double splitPaid(Member m) => sum(_txns.where((t) => t.isExpense && t.isSplit && t.userId == m.id).map((t) => t.amount));
+    final shared = {for (final w in _wallets.where((w) => w.isShared)) w.id};
+    bool thisMonth(Txn t) => t.occurredOn.year == now.year && t.occurredOn.month == now.month;
+    // Spending from a shared wallet isn't owed by either of you.
+    double splitPaid(Member m) =>
+        sum(_txns.where((t) => t.isExpense && t.isSplit && t.userId == m.id && !shared.contains(t.walletId)).map((t) => t.amount));
+    double toppedUp(Member m) => sum(
+      _txns
+          .where((t) => t.isMove && t.userId == m.id && shared.contains(t.toWalletId) && !shared.contains(t.walletId) && thisMonth(t))
+          .map((t) => t.amount),
+    );
     double settledOut(Member m) => sum(_settlements.where((s) => s.fromId == m.id).map((s) => s.amount));
     final [a, b] = members;
     // Positive: b owes a.
@@ -431,9 +455,11 @@ class MockRepository implements PairnestRepository {
                   .where((t) => t.isExpense && t.userId == m.id && t.occurredOn.year == now.year && t.occurredOn.month == now.month)
                   .map((t) => t.amount),
             ),
+            toppedUpThisMonth: toppedUp(m),
           ),
       ],
       settlements: [..._settlements.reversed.take(10)],
+      sharedSpentThisMonth: sum(_txns.where((t) => t.isExpense && shared.contains(t.walletId) && thisMonth(t)).map((t) => t.amount)),
     );
   });
 
@@ -559,6 +585,35 @@ class MockRepository implements PairnestRepository {
     last4: d.last4,
     showBalanceToPartner: d.showBalanceToPartner,
   );
+
+  @override
+  Future<({Txn transaction, List<Wallet> wallets})> moveMoney({
+    required int fromWalletId,
+    required int toWalletId,
+    required double amount,
+    String? note,
+  }) async {
+    if (fromWalletId == toWalletId) throw Exception('Pick two different wallets.');
+    final from = _rawWallet(_checkWallet(fromWalletId, _user.id)!);
+    final to = _rawWallet(_checkWallet(toWalletId, _user.id)!);
+    final now = DateTime.now();
+    final move = Txn(
+      id: _nextId++,
+      userId: _user.id,
+      userName: _user.name,
+      type: 'move',
+      amount: amount,
+      category: 'others',
+      title: (note ?? '').trim().isEmpty ? '${from.name} → ${to.name}' : note!.trim(),
+      paymentMethod: _walletPaymentMethod(from.id),
+      isSplit: false,
+      occurredOn: DateTime(now.year, now.month, now.day),
+      walletId: from.id,
+      toWalletId: to.id,
+    );
+    _txns.add(move);
+    return (transaction: move, wallets: await wallets());
+  }
 
   @override
   Future<List<Wallet>> wallets() => _delay(() {

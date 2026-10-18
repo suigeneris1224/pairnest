@@ -372,6 +372,24 @@ class ApiRepository implements PairnestRepository {
   Future<Wallet> setWalletBalance(int id, double balance) =>
       _call(() async => Wallet.fromJson((await _dio.post('wallets/$id/balance', data: {'balance': balance})).data as Map<String, dynamic>));
 
+  @override
+  Future<({Txn transaction, List<Wallet> wallets})> moveMoney({
+    required int fromWalletId,
+    required int toWalletId,
+    required double amount,
+    String? note,
+  }) => _call(() async {
+    final res = await _dio.post(
+      'moves',
+      data: {'from_wallet_id': fromWalletId, 'to_wallet_id': toWalletId, 'amount': amount, 'note': ?note},
+    );
+    final data = res.data as Map<String, dynamic>;
+    return (
+      transaction: Txn.fromJson(data['transaction'] as Map<String, dynamic>),
+      wallets: [for (final w in data['wallets'] as List) Wallet.fromJson(w as Map<String, dynamic>)],
+    );
+  });
+
   static Map<String, dynamic> _walletBody(WalletDraft d) => {
     'name': d.name,
     'kind': d.kind,

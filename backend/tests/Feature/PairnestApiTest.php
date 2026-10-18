@@ -500,6 +500,85 @@ class PairnestApiTest extends TestCase
         $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 5900)->assertJsonPath('0.balance', 1500);
     }
 
+    public function test_moving_money_between_wallets_is_not_spending(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2028, 3, 10));
+        $wallet = fn (array $w) => $this->postJson('/api/v1/wallets', $w)->json('id');
+        $gcash = $wallet(['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 10000]);
+        $card = $wallet(['name' => 'BPI Credit', 'kind' => 'credit', 'provider' => 'bpi']);
+        $ours = $wallet(['name' => 'Our Maya', 'kind' => 'ewallet', 'provider' => 'maya', 'is_shared' => true]);
+        $this->postJson('/api/v1/transactions', [
+            'type' => 'expense', 'amount' => 3000, 'category' => 'shopping', 'title' => 'Shoes', 'occurred_on' => '2028-03-02', 'wallet_id' => $card,
+        ]);
+
+        // Pay off the card from GCash.
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $gcash, 'to_wallet_id' => $card, 'amount' => 3000])
+            ->assertCreated()
+            ->assertJsonPath('transaction.type', 'move')
+            ->assertJsonPath('transaction.title', 'GCash → BPI Credit')
+            ->assertJsonPath('transaction.to_wallet_id', $card)
+            ->assertJsonPath('transaction.occurred_on', '2028-03-10')
+            ->assertJsonPath('wallets.1.balance', 7000)
+            ->assertJsonPath('wallets.2.balance', 0);
+        // Top up the shared wallet.
+        $topUp = $this->postJson('/api/v1/moves', ['from_wallet_id' => $gcash, 'to_wallet_id' => $ours, 'amount' => 5000, 'note' => 'March share'])
+            ->assertJsonPath('transaction.title', 'March share')
+            ->assertJsonPath('wallets.0.balance', 5000)
+            ->json('transaction.id');
+
+        // Moves aren't spending.
+        $this->getJson('/api/v1/budgets/2028-03')->assertJsonPath('spent', 3000);
+        $this->getJson('/api/v1/dashboard')->assertJsonPath('saved_this_month', 0);
+
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $gcash, 'to_wallet_id' => $gcash, 'amount' => 1])->assertUnprocessable();
+        $this->patchJson("/api/v1/transactions/{$topUp}", ['amount' => 1])->assertUnprocessable();
+
+        // Sam can't move money out of, or into, Alex's personal wallet.
+        Sanctum::actingAs($sam);
+        $bdo = $wallet(['name' => 'BDO', 'kind' => 'debit', 'provider' => 'bdo', 'balance' => 9000]);
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $gcash, 'to_wallet_id' => $bdo, 'amount' => 1])
+            ->assertUnprocessable()->assertJsonValidationErrors('from_wallet_id');
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $bdo, 'to_wallet_id' => $gcash, 'amount' => 1])
+            ->assertUnprocessable()->assertJsonValidationErrors('to_wallet_id');
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $bdo, 'to_wallet_id' => $ours, 'amount' => 3000])->assertCreated();
+        $this->getJson('/api/v1/feed')->assertJsonFragment(['type' => 'topup', 'title' => 'Alex topped up Our Maya']);
+
+        // Deleting a move puts both balances back.
+        Sanctum::actingAs($alex);
+        $this->deleteJson("/api/v1/transactions/{$topUp}")->assertNoContent();
+        $this->getJson('/api/v1/wallets')->assertJsonPath('0.balance', 3000)->assertJsonPath('1.balance', 7000);
+    }
+
+    public function test_spending_from_a_shared_wallet_is_not_owed_between_partners(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2028, 3, 10));
+        $ours = $this->postJson('/api/v1/wallets', ['name' => 'Our Maya', 'kind' => 'ewallet', 'provider' => 'maya', 'is_shared' => true])->json('id');
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash'])->json('id');
+        $expense = fn (int $amount, ?int $wallet) => $this->postJson('/api/v1/transactions', [
+            'type' => 'expense', 'amount' => $amount, 'category' => 'food', 'title' => 'Groceries', 'occurred_on' => '2028-03-05',
+            'is_split' => true, 'wallet_id' => $wallet,
+        ])->assertCreated();
+
+        $expense(4000, $ours);
+        $expense(1000, $gcash);
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $gcash, 'to_wallet_id' => $ours, 'amount' => 6000]);
+        Sanctum::actingAs($sam);
+        $sams = $this->postJson('/api/v1/wallets', ['name' => 'BDO', 'kind' => 'debit', 'provider' => 'bdo'])->json('id');
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $sams, 'to_wallet_id' => $ours, 'amount' => 4000]);
+
+        // Only the ₱1,000 from Alex's own GCash is split; the pot's ₱4,000 isn't.
+        $this->getJson('/api/v1/balance')
+            ->assertJsonPath('owes.from.name', 'Sam')
+            ->assertJsonPath('owes.amount', 500)
+            ->assertJsonPath('shared_spent_this_month', 4000)
+            ->assertJsonPath('members.0.topped_up_this_month', 6000)
+            ->assertJsonPath('members.1.topped_up_this_month', 4000);
+    }
+
     public function test_a_used_wallet_is_archived_not_deleted(): void
     {
         [, $alex] = $this->pair();

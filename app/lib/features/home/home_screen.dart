@@ -587,6 +587,7 @@ class _FeedTypeBadge extends StatelessWidget {
       'goal' => (Icons.track_changes_rounded, Pastel.lavender),
       'mood' => (Icons.favorite_rounded, Pastel.peach),
       'settle' => (Icons.handshake_rounded, Pastel.peach),
+      'topup' => (Icons.account_balance_wallet_rounded, Pastel.sky),
       _ => (Icons.chat_bubble_rounded, Pastel.lavender),
     };
     return Container(

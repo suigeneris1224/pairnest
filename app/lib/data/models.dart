@@ -529,24 +529,34 @@ class Settlement {
 
 /// What one partner has paid: split expenses ever, and everything this month.
 class MemberPaid {
-  const MemberPaid({required this.id, required this.name, required this.splitPaid, required this.paidThisMonth});
+  const MemberPaid({
+    required this.id,
+    required this.name,
+    required this.splitPaid,
+    required this.paidThisMonth,
+    this.toppedUpThisMonth = 0,
+  });
 
   factory MemberPaid.fromJson(Map<String, dynamic> j) => MemberPaid(
     id: j['id'] as int,
     name: j['name'] as String,
     splitPaid: _num(j['split_paid']),
     paidThisMonth: _num(j['paid_this_month']),
+    toppedUpThisMonth: _num(j['topped_up_this_month']),
   );
 
   final int id;
   final String name;
   final double splitPaid;
   final double paidThisMonth;
+
+  /// Moved into shared wallets this month.
+  final double toppedUpThisMonth;
 }
 
 /// Who owes whom, as a running total of split expenses less settlements.
 class SplitBalance {
-  const SplitBalance({this.owes, this.members = const [], this.settlements = const []});
+  const SplitBalance({this.owes, this.members = const [], this.settlements = const [], this.sharedSpentThisMonth = 0});
 
   factory SplitBalance.fromJson(Map<String, dynamic> j) {
     final owes = j['owes'] as Map<String, dynamic>?;
@@ -560,6 +570,7 @@ class SplitBalance {
             ),
       members: [for (final m in (j['members'] as List? ?? const [])) MemberPaid.fromJson(m as Map<String, dynamic>)],
       settlements: [for (final s in (j['settlements'] as List? ?? const [])) Settlement.fromJson(s as Map<String, dynamic>)],
+      sharedSpentThisMonth: _num(j['shared_spent_this_month']),
     );
   }
 
@@ -567,6 +578,9 @@ class SplitBalance {
   final Owes? owes;
   final List<MemberPaid> members;
   final List<Settlement> settlements;
+
+  /// Spent from shared wallets this month; not owed by either of you.
+  final double sharedSpentThisMonth;
 
   /// False until the partner has joined.
   bool get hasPartner => members.length == 2;

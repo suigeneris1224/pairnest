@@ -228,7 +228,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                         shown,
                         filtered: _filter.isActive || range != null || _query.isNotEmpty,
                         // Transfers aren't editable; their goal is where they live.
-                        onEdit: (t) => t.isTransfer || t.isRelease ? context.go('/goals') : context.push('/add', extra: t),
+                        onEdit: (t) => t.isTransfer || t.isRelease
+                            ? context.go('/goals')
+                            : t.isMove
+                            ? context.go('/home/wallets?id=${t.toWalletId}')
+                            : context.push('/add', extra: t),
                         onDelete: _delete,
                       ),
                       _ => EmptyState(

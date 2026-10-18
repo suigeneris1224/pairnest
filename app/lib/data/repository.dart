@@ -99,6 +99,15 @@ abstract class PairnestRepository {
   /// Sets what the wallet holds right now.
   Future<Wallet> setWalletBalance(int id, double balance);
 
+  /// Moves money between two of your (or shared) wallets: not spending.
+  /// Deleting the returned transaction undoes it.
+  Future<({Txn transaction, List<Wallet> wallets})> moveMoney({
+    required int fromWalletId,
+    required int toWalletId,
+    required double amount,
+    String? note,
+  });
+
   Future<List<Payday>> paydays();
   Future<Payday> addPayday(PaydayDraft draft);
   Future<Payday> updatePayday(int id, PaydayDraft draft);

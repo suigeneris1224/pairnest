@@ -1048,7 +1048,7 @@ void main() {
     final container = await _signedIn(tester);
     container.read(routerProvider).go('/home/wallets');
     await _settle(tester);
-    expect(find.text('Internet & water'), findsOneWidget, reason: 'Our Maya first');
+    expect(find.text('Our share'), findsOneWidget, reason: "Our Maya first, with Sam's top-up");
     // Only its left edge peeks in.
     await tester.tapAt(tester.getTopLeft(find.byKey(const ValueKey('wallet-card-2'))) + const Offset(16, 100));
     await _settle(tester);
@@ -1056,5 +1056,71 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(-300, 0));
     await _settle(tester);
     expect(find.text('Weekly groceries'), findsOneWidget, reason: 'then the BPI card');
+  });
+
+  testWidgets('topping up the shared wallet moves money without spending it, and Undo reverses it', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    container.read(routerProvider).go('/home/wallets');
+    await _settle(tester);
+    await tester.tap(find.text('Top up'));
+    await _settle(tester);
+    expect(find.text('Top up Our Maya'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '2000');
+    await _settle(tester);
+    await tester.tap(find.text('Move ₱2,000'));
+    await _settle(tester);
+    expect(find.text('Moved ₱2,000 to Our Maya'), findsOneWidget);
+
+    var wallets = await resolve(repo.wallets());
+    expect(wallets.firstWhere((w) => w.name == 'Our Maya').balance, 8000);
+    expect(wallets.firstWhere((w) => w.name == 'GCash').balance, 2200);
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    wallets = await resolve(repo.wallets());
+    expect(wallets.firstWhere((w) => w.name == 'GCash').balance, 4200);
+
+    await resolve(repo.moveMoney(fromWalletId: 2, toWalletId: 1, amount: 2000));
+    // Not spending: the budget is untouched.
+    expect((await resolve(repo.dashboard())).budget.spent, 17780);
+    // Settle Up lists who put money in.
+    final balance = await resolve(repo.balance());
+    expect(balance.members.firstWhere((m) => m.name == 'Alex').toppedUpThisMonth, 2000);
+    expect(balance.members.firstWhere((m) => m.name == 'Sam').toppedUpThisMonth, 3000);
+    expect(balance.owes!.amount, 415, reason: 'top-ups never change who owes whom');
+    container.read(routerProvider).go('/home/settle');
+    await _settle(tester);
+    await tester.scrollUntilVisible(find.text('Put into shared wallets'), 200, scrollable: find.byType(Scrollable).last);
+    expect(find.text('Put into shared wallets'), findsOneWidget);
+  });
+
+  testWidgets('a credit card can be paid off from another wallet', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    container.read(routerProvider).go('/home/wallets?id=3');
+    await _settle(tester);
+    await tester.tap(find.text('Pay card'));
+    await _settle(tester);
+    expect(find.text('Pay BPI Credit'), findsOneWidget);
+    // The amount owed is suggested.
+    await tester.tap(find.text('Move ₱6,300'));
+    await _settle(tester);
+    final wallets = await resolve(repo.wallets());
+    expect(wallets.firstWhere((w) => w.name == 'BPI Credit').balance, 0);
+
+    container.read(routerProvider).go('/activity');
+    await _settle(tester);
+    expect(find.text('⇄ ₱6,300'), findsWidgets);
+    expect(find.textContaining('Moved between wallets'), findsWidgets);
   });
 }

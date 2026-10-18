@@ -203,6 +203,16 @@ void main() {
     expect((await sam.dashboard()).wallets, hasLength(3));
     await alex.updateWallet(gcash.id, const WalletDraft(name: 'GCash', kind: 'ewallet', provider: 'gcash', showBalanceToPartner: true));
     expect((await sam.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
+    // Moving money: a top-up into the shared wallet isn't spending, and deleting it undoes it.
+    final topUp = await alex.moveMoney(fromWalletId: gcash.id, toWalletId: ours.id, amount: 1000, note: 'My share');
+    expect(topUp.transaction.isMove, isTrue);
+    expect(topUp.transaction.toWalletId, ours.id);
+    expect(topUp.wallets.firstWhere((w) => w.id == ours.id).balance, 1000);
+    final split = await sam.balance();
+    expect(split.members.firstWhere((m) => m.name == 'Alex').toppedUpThisMonth, 1000);
+    await expectLater(sam.moveMoney(fromWalletId: gcash.id, toWalletId: ours.id, amount: 1), throwsA(anything));
+    await alex.deleteTransaction(topUp.transaction.id);
+    expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
     await alex.archiveWallet(card.id);
     expect((await alex.wallets()).map((w) => w.id), isNot(contains(card.id)));
 
