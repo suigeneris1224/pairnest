@@ -277,14 +277,14 @@ class ActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return PairnestCard(
       onTap: onTap,
-      padding: const EdgeInsets.fromLTRB(6, 14, 6, 12),
+      padding: const EdgeInsets.fromLTRB(10, 14, 10, 12),
       child: Column(
         children: [
           PastelIcon(icon, tone: tone),
           const SizedBox(height: 8),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(label, maxLines: 1, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            child: Text(label, maxLines: 1, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -444,9 +444,8 @@ class SpendingDonut extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(
                 children: [
-                  CircleAvatar(radius: 5, backgroundColor: categoryStyle(e.key).color),
+                  CategoryIcon(e.key, size: compact ? 24 : 28),
                   const SizedBox(width: 8),
-                  if (!compact) ...[CategoryIcon(e.key, size: 28), const SizedBox(width: 8)],
                   Expanded(
                     child: Text(
                       compact ? (categoryStyle(e.key).short ?? categoryStyle(e.key).label) : categoryStyle(e.key).label,
@@ -1060,27 +1059,37 @@ class QuoteCard extends StatelessWidget {
     final p = context.pn;
     final d = date ?? DateTime.now();
     final quote = _quotes[(d.difference(DateTime(d.year)).inDays) % _quotes.length];
+    final text = Text(
+      '“$quote”',
+      style: TextStyle(fontSize: 12.5, height: 1.4, color: p.text, fontStyle: FontStyle.italic),
+    );
+    final heart = Icon(Icons.favorite_border_rounded, size: 14, color: p.primary);
     return PairnestCard(
       color: Color.lerp(p.surface, p.accent, p.isDark ? 0.05 : 0.08),
       padding: const EdgeInsets.fromLTRB(10, 12, 14, 12),
-      child: Row(
-        children: [
-          MascotBird(size: 52, color: p.birdB),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '“$quote”',
-                  style: TextStyle(fontSize: 12.5, height: 1.4, color: p.text, fontStyle: FontStyle.italic),
-                ),
-                const SizedBox(height: 4),
-                Icon(Icons.favorite_border_rounded, size: 14, color: p.primary),
-              ],
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        // Narrow (beside another card): the bird sits above the quote so words don't break.
+        builder: (context, c) => c.maxWidth < 190
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MascotBird(size: 44, color: p.birdB),
+                  const SizedBox(height: 8),
+                  text,
+                  const SizedBox(height: 6),
+                  heart,
+                ],
+              )
+            : Row(
+                children: [
+                  MascotBird(size: 52, color: p.birdB),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [text, const SizedBox(height: 4), heart]),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -1279,7 +1288,7 @@ class WalletCard extends StatefulWidget {
     required this.child,
     required this.holder,
     required this.number,
-    this.title = 'Our Card',
+    this.title = 'Pairnest Card',
     this.trailing,
     this.strip,
     this.onTap,
@@ -1294,7 +1303,7 @@ class WalletCard extends StatefulWidget {
   /// Bottom-right, where a real card puts its network logo.
   final Widget? corner;
 
-  /// Top-left name, e.g. "Our Card" or a bank's name.
+  /// Top-left name, e.g. "Pairnest Card" or a bank's name.
   final String title;
 
   /// Light, base and dark gradient stops; the theme's colour when null.

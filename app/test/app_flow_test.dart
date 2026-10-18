@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pairnest/app.dart';
 import 'package:pairnest/core/format.dart';
+import 'package:pairnest/core/widgets/categories.dart';
+import 'package:pairnest/core/widgets/common.dart';
 import 'package:pairnest/core/widgets/member_avatar.dart';
 import 'package:pairnest/core/widgets/nest_ui.dart';
 import 'package:pairnest/core/mascot/mascot.dart';
@@ -352,7 +354,7 @@ void main() {
     }
 
     expect(find.text('ALEX & SAM'), findsOneWidget);
-    expect(find.text('Our Card'), findsOneWidget);
+    expect(find.text('Pairnest Card'), findsOneWidget);
     expect(find.text('pairnest'), findsNothing);
     expect(find.text('Left to spend'), findsOneWidget);
     expect(find.text('₱14,220'), findsWidgets);
@@ -904,6 +906,8 @@ void main() {
     await tester.scrollUntilVisible(find.text("Sam's Salary"), 200, scrollable: find.byType(Scrollable).last);
     expect(find.byTooltip('Log Salary'), findsNothing);
     expect(find.textContaining('Monthly · 25th'), findsOneWidget);
+    // Let entrance animations started by the scroll finish.
+    await _settle(tester);
   });
 
   testWidgets('a payday can be added from the Budgets page', (tester) async {
@@ -1250,6 +1254,28 @@ void main() {
     expect(find.byType(QuoteCard), findsOneWidget);
     expect(tester.getTopLeft(find.byType(QuoteCard)).dy, lessThan(top('Pairnest Feels') + 20));
     expect(top('Wallets'), greaterThan(tester.getBottomLeft(find.byType(QuoteCard)).dy));
+  });
+
+  testWidgets('paired Home cards are equally tall, Feels is wider and opens its history', (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final container = await _signedIn(tester);
+    Size card(String title) => tester.getSize(find.ancestor(of: find.text(title), matching: find.byType(PairnestCard)).first);
+    expect(card('Savings Goals').height, card('Upcoming').height);
+    final feels = card('Pairnest Feels');
+    final quote = tester.getSize(find.descendant(of: find.byType(QuoteCard), matching: find.byType(PairnestCard)));
+    expect(feels.height, quote.height);
+    expect(feels.width, greaterThan(quote.width * 1.3));
+    expect(find.text("You're doing great, together."), findsNothing);
+    // Each spending category has its icon in the legend.
+    expect(find.descendant(of: find.byType(SpendingDonut), matching: find.byType(CategoryIcon)), findsNWidgets(5));
+
+    await tester.ensureVisible(find.text('View history'));
+    await _settle(tester);
+    await tester.tap(find.text('View history'));
+    await _settle(tester);
+    expect(container.read(routerProvider).state.uri.path, '/feelings');
   });
 }
 

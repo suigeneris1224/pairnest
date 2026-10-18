@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -644,6 +645,7 @@ class _DashboardBody extends ConsumerWidget {
         FadeSlideIn(
           index: 2,
           child: SectionCard(
+            icon: Icons.donut_large_rounded,
             title: "This Month's Spending",
             onAction: () => context.go('/activity'),
             child: SpendingDonut(spending: data.spending, hideAmounts: hide),
@@ -661,7 +663,7 @@ class _DashboardBody extends ConsumerWidget {
         const SizedBox(height: 14),
         FadeSlideIn(
           index: 4,
-          child: _TwoUp(left: const _FeelsCard(), right: const QuoteCard()),
+          child: _TwoUp(left: const _FeelsCard(), right: const QuoteCard(), leftFlex: 3, rightFlex: 2),
         ),
         const SizedBox(height: 14),
         FadeSlideIn(index: 5, child: _WalletsRow(data.wallets)),
@@ -704,26 +706,104 @@ class _DashboardBody extends ConsumerWidget {
 
 /// Two cards side by side, stacked on narrow phones.
 class _TwoUp extends StatelessWidget {
-  const _TwoUp({required this.left, required this.right});
+  const _TwoUp({required this.left, required this.right, this.leftFlex = 1, this.rightFlex = 1});
 
   final Widget left;
   final Widget right;
+  final int leftFlex;
+  final int rightFlex;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) => c.maxWidth < 340
           ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [left, const SizedBox(height: 14), right])
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: left),
-                const SizedBox(width: 12),
-                Expanded(child: right),
-              ],
-            ),
+          : _EqualHeightPair(leftFlex: leftFlex, rightFlex: rightFlex, gap: 12, children: [left, right]),
     );
   }
+}
+
+/// Two cards side by side, both as tall as the taller one. IntrinsicHeight
+/// can't do this here: SectionCard's header uses a LayoutBuilder.
+class _EqualHeightPair extends MultiChildRenderObjectWidget {
+  const _EqualHeightPair({required this.leftFlex, required this.rightFlex, required this.gap, required super.children});
+
+  final int leftFlex;
+  final int rightFlex;
+  final double gap;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderEqualHeightPair(leftFlex, rightFlex, gap);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderEqualHeightPair renderObject) {
+    renderObject
+      ..leftFlex = leftFlex
+      ..rightFlex = rightFlex
+      ..gap = gap;
+  }
+}
+
+class _PairParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderEqualHeightPair extends RenderBox
+    with ContainerRenderObjectMixin<RenderBox, _PairParentData>, RenderBoxContainerDefaultsMixin<RenderBox, _PairParentData> {
+  _RenderEqualHeightPair(this._leftFlex, this._rightFlex, this._gap);
+
+  int _leftFlex;
+  set leftFlex(int v) {
+    if (v != _leftFlex) {
+      _leftFlex = v;
+      markNeedsLayout();
+    }
+  }
+
+  int _rightFlex;
+  set rightFlex(int v) {
+    if (v != _rightFlex) {
+      _rightFlex = v;
+      markNeedsLayout();
+    }
+  }
+
+  double _gap;
+  set gap(double v) {
+    if (v != _gap) {
+      _gap = v;
+      markNeedsLayout();
+    }
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PairParentData) child.parentData = _PairParentData();
+  }
+
+  @override
+  void performLayout() {
+    final left = firstChild!, right = childAfter(left)!;
+    final width = constraints.maxWidth;
+    final leftWidth = (width - _gap) * _leftFlex / (_leftFlex + _rightFlex);
+    final rightWidth = width - _gap - leftWidth;
+    // Natural heights first, then both again at the taller one.
+    left.layout(BoxConstraints.tightFor(width: leftWidth), parentUsesSize: true);
+    right.layout(BoxConstraints.tightFor(width: rightWidth), parentUsesSize: true);
+    final height = left.size.height > right.size.height ? left.size.height : right.size.height;
+    // A minimum rather than a fixed height keeps them linked to this pair, so a
+    // card that grows later (data arriving) lays the pair out again.
+    left.layout(BoxConstraints(minWidth: leftWidth, maxWidth: leftWidth, minHeight: height), parentUsesSize: true);
+    right.layout(BoxConstraints(minWidth: rightWidth, maxWidth: rightWidth, minHeight: height), parentUsesSize: true);
+    final tallest = left.size.height > right.size.height ? left.size.height : right.size.height;
+    (left.parentData! as _PairParentData).offset = Offset.zero;
+    (right.parentData! as _PairParentData).offset = Offset(leftWidth + _gap, 0);
+    size = constraints.constrain(Size(width, tallest));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) => defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) => defaultHitTestChildren(result, position: position);
 }
 
 class _BalanceCard extends ConsumerWidget {
@@ -1104,15 +1184,17 @@ class _FeelsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(color: p.surface.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(12)),
-            child: Row(
-              children: [
-                Icon(Icons.spa_rounded, size: 16, color: p.primary),
-                const SizedBox(width: 6),
-                const Expanded(child: Text("You're doing great, together.", style: TextStyle(fontSize: 11.5))),
-              ],
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 38),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              onPressed: () => context.go('/feelings'),
+              icon: const Icon(Icons.history_rounded, size: 18),
+              label: const Text('View history'),
             ),
           ),
         ],
