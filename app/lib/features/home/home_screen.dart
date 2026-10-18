@@ -742,8 +742,16 @@ class _BalanceCard extends ConsumerWidget {
     final change = data.changeVsLastMonth;
     final big = Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white, fontSize: 34, height: 1.1);
     const soft = TextStyle(color: Color(0xDDFFFFFF), fontSize: 12.5);
+    // What's actually in the shared wallets, beside what the plan says is left.
+    final shared = [
+      for (final w in data.wallets)
+        if (w.isShared && w.balance != null) w.balance!,
+    ];
+    final pot = shared.isEmpty ? null : shared.fold(0.0, (a, v) => a + v);
+    final noBudget = b.total <= 0;
 
     return WalletCard(
+      corner: pot == null || noBudget ? null : _SharedPot(pot, hide: hide, low: b.remaining > 0 && pot < b.remaining),
       holder: me.coupleNames.toUpperCase(),
       number: (me.couple?.id ?? 0).toString().padLeft(4, '0'),
       onTap: () => context.push('/home/budgets'),
@@ -758,7 +766,10 @@ class _BalanceCard extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Text('Shared Balance', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              Text(
+                noBudget && pot != null ? 'In shared wallets' : 'Left to spend',
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(width: 2),
               Tooltip(
                 message: hide ? 'Show amounts' : 'Hide amounts',
@@ -773,7 +784,15 @@ class _BalanceCard extends ConsumerWidget {
               ),
             ],
           ),
-          if (b.total <= 0) ...[
+          if (noBudget && pot != null) ...[
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: hide ? Text('₱ ••••••', style: big) : AnimatedAmount(pot, style: big),
+            ),
+            const SizedBox(height: 2),
+            const Text('Set your shared budget ›', style: soft),
+          ] else if (noBudget) ...[
             Text('Set your shared budget', style: big?.copyWith(fontSize: 22)),
           ] else ...[
             FittedBox(
@@ -802,6 +821,53 @@ class _BalanceCard extends ConsumerWidget {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// "In shared wallets ₱6,000 ›" in the card's corner; nudges a top-up when
+/// the shared wallets hold less than what's left to spend.
+class _SharedPot extends StatelessWidget {
+  const _SharedPot(this.amount, {required this.hide, required this.low});
+
+  final double amount;
+  final bool hide;
+  final bool low;
+
+  @override
+  Widget build(BuildContext context) {
+    final money = hide ? '₱••••' : (amount < 0 ? '-${peso(-amount)}' : peso(amount));
+    // Its own node, so screen readers can reach it apart from the card.
+    return Semantics(
+      container: true,
+      button: true,
+      label: 'In shared wallets, $money${low ? ', top up?' : ''}',
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => context.go('/home/wallets?filter=ours'),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 3, 2, 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.favorite_rounded, size: 11, color: Color(0xDDFFFFFF)),
+                const SizedBox(width: 4),
+                const Text('Shared ', style: TextStyle(color: Color(0xDDFFFFFF), fontSize: 11)),
+                Text(
+                  money,
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                if (low) const Text(' · top up?', style: TextStyle(color: Color(0xDDFFFFFF), fontSize: 11)),
+                const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

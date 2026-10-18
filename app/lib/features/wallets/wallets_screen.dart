@@ -20,17 +20,20 @@ import 'wallet_editor.dart';
 /// Every wallet as a card you can swipe through, with the chosen one's
 /// month, actions and recent transactions below.
 class WalletsScreen extends ConsumerStatefulWidget {
-  const WalletsScreen({super.key, this.initialId});
+  const WalletsScreen({super.key, this.initialId, this.sharedOnly = false});
 
   /// Opens on this wallet, e.g. when tapped on Home.
   final int? initialId;
+
+  /// Opens on the Ours filter.
+  final bool sharedOnly;
 
   @override
   ConsumerState<WalletsScreen> createState() => _WalletsScreenState();
 }
 
 class _WalletsScreenState extends ConsumerState<WalletsScreen> {
-  int _filter = 0;
+  late int _filter = widget.sharedOnly ? 1 : 0;
   int _index = 0;
   PageController? _pages;
   late int? _jumpTo = widget.initialId;

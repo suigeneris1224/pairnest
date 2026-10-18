@@ -80,7 +80,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('Alex & Sam'), findsOneWidget);
-    expect(find.text('Shared Balance'), findsOneWidget);
+    expect(find.text('Left to spend'), findsOneWidget);
     // Balance = ₱32,000 budget − ₱17,780 seeded spending.
     expect(find.text('₱14,220'), findsOneWidget);
     expect(find.text("This Month's Spending"), findsOneWidget);
@@ -353,7 +353,7 @@ void main() {
     expect(find.text('ALEX & SAM'), findsOneWidget);
     expect(find.text('Our Card'), findsOneWidget);
     expect(find.text('pairnest'), findsNothing);
-    expect(find.text('Shared Balance'), findsOneWidget);
+    expect(find.text('Left to spend'), findsOneWidget);
     expect(find.text('₱14,220'), findsWidgets);
     final japanBefore = (await resolve(repo.goals())).firstWhere((g) => g.name == 'Japan Trip').saved;
 
@@ -1184,6 +1184,33 @@ void main() {
     final gcash = (await resolve(repo.wallets())).firstWhere((w) => w.id == 2);
     expect(gcash.balance, 3200);
     expect(container0(tester).read(prefsProvider).getInt('last_transfer_wallet_id'), 2);
+  });
+
+  testWidgets("the card shows what's left to spend, and what's actually in the shared wallets", (tester) async {
+    final container = await _signedIn(tester);
+    expect(find.text('Left to spend'), findsOneWidget);
+    expect(find.text('Shared Balance'), findsNothing);
+    // ₱14,220 left in the budget but only ₱6,000 in Our Maya: a gentle nudge.
+    expect(find.bySemanticsLabel('In shared wallets, ₱6,000, top up?'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('In shared wallets, ₱6,000, top up?'));
+    await _settle(tester);
+    expect(container.read(routerProvider).state.uri.toString(), '/home/wallets?filter=ours');
+    expect(find.byKey(const ValueKey('wallet-card-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('wallet-card-2')), findsNothing, reason: 'only shared wallets');
+  });
+
+  testWidgets('with no budget yet, the card shows the shared wallets instead', (tester) async {
+    final repo = MockRepository(latency: Duration.zero, seed: false);
+    final container = await _signedIn(tester, repo: repo);
+    final add = repo.addWallet(const WalletDraft(name: 'Our Maya', kind: 'ewallet', provider: 'maya', isShared: true, balance: 2500));
+    await _settle(tester);
+    await add;
+    container.invalidate(dashboardProvider);
+    await _settle(tester);
+    expect(find.text('In shared wallets'), findsOneWidget);
+    expect(find.text('₱2,500'), findsWidgets);
+    expect(find.text('Set your shared budget ›'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('^In shared wallets, ')), findsNothing, reason: 'no corner when it is the main figure');
   });
 }
 

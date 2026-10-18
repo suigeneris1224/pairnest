@@ -1286,9 +1286,13 @@ class WalletCard extends StatefulWidget {
     this.colors,
     this.accent,
     this.emblem,
+    this.corner,
   });
 
   final Widget child;
+
+  /// Bottom-right, where a real card puts its network logo.
+  final Widget? corner;
 
   /// Top-left name, e.g. "Our Card" or a bank's name.
   final String title;
@@ -1443,6 +1447,14 @@ class _WalletCardState extends State<WalletCard> {
                                 ],
                               ),
                             ),
+                            if (widget.corner != null) ...[
+                              const SizedBox(width: 8),
+                              // Never taller than the holder lines, so the card can't overflow.
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 180, maxHeight: 28),
+                                child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.bottomRight, child: widget.corner),
+                              ),
+                            ],
                           ],
                         ),
                       ],

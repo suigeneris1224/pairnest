@@ -99,7 +99,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(path: 'settle', pageBuilder: (_, state) => _page(state, const SettleScreen())),
                   GoRoute(
                     path: 'wallets',
-                    pageBuilder: (_, state) => _page(state, WalletsScreen(initialId: int.tryParse(state.uri.queryParameters['id'] ?? ''))),
+                    pageBuilder: (_, state) => _page(
+                      state,
+                      WalletsScreen(
+                        initialId: int.tryParse(state.uri.queryParameters['id'] ?? ''),
+                        sharedOnly: state.uri.queryParameters['filter'] == 'ours',
+                      ),
+                    ),
                   ),
                   GoRoute(
                     path: 'recap',

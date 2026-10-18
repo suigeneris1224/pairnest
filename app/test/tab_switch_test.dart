@@ -57,7 +57,7 @@ void main() {
     expect(find.text('Weekly Conversation'), findsOneWidget);
     await tap(find.text('Home').last);
     expect(_tabOpacity(tester, 'Weekly Conversation'), 0);
-    expect(_tabOpacity(tester, 'Shared Balance'), 1);
+    expect(_tabOpacity(tester, 'Left to spend'), 1);
 
     await tap(find.text('Goals').last);
     expect(_tabOpacity(tester, 'Weekly Conversation'), 0);
