@@ -645,7 +645,7 @@ class _DashboardBody extends ConsumerWidget {
         FadeSlideIn(
           index: 2,
           child: SectionCard(
-            icon: Icons.donut_large_rounded,
+            icon: Icons.bar_chart_rounded,
             title: "This Month's Spending",
             onAction: () => context.go('/activity'),
             child: SpendingDonut(spending: data.spending, hideAmounts: hide),
@@ -817,7 +817,7 @@ class _BalanceCard extends ConsumerWidget {
     final b = data.budget;
     final me = ref.watch(meProvider);
     final change = data.changeVsLastMonth;
-    final big = Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white, fontSize: 34, height: 1.1);
+    final big = Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white, fontSize: 30, height: 1.1);
     const soft = TextStyle(color: Color(0xDDFFFFFF), fontSize: 12.5);
     // What's actually in the shared wallets, beside what the plan says is left.
     final shared = [
@@ -828,6 +828,10 @@ class _BalanceCard extends ConsumerWidget {
     final noBudget = b.total <= 0;
 
     return WalletCard(
+      // A little shorter than a real card, so Home shows more below it.
+      cardRatio: 1.85,
+      cardMinHeight: 204,
+      dense: true,
       corner: pot == null || noBudget ? null : _SharedPot(pot, hide: hide, low: b.remaining > 0 && pot < b.remaining),
       holder: me.coupleNames.toUpperCase(),
       number: (me.couple?.id ?? 0).toString().padLeft(4, '0'),
@@ -854,8 +858,8 @@ class _BalanceCard extends ConsumerWidget {
                   onTap: ref.read(hideAmountsProvider.notifier).toggle,
                   radius: 18,
                   child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: Colors.white),
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 17, color: Colors.white),
                   ),
                 ),
               ),
@@ -880,7 +884,6 @@ class _BalanceCard extends ConsumerWidget {
                   : AnimatedAmount(b.remaining.abs(), style: big, prefix: b.remaining < 0 ? '-' : ''),
             ),
             if (change != null) ...[
-              const SizedBox(height: 2),
               Row(
                 children: [
                   Icon(change > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 14, color: const Color(0xDDFFFFFF)),
@@ -1157,6 +1160,9 @@ class _FeelsCard extends StatelessWidget {
     return SectionCard(
       icon: Icons.favorite_rounded,
       title: 'Pairnest Feels',
+      action: 'View history',
+      actionIcon: Icons.history_rounded,
+      onAction: () => context.go('/feelings'),
       color: Color.lerp(p.surface, lavender.light, p.isDark ? 0.08 : 0.45),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       child: Column(
@@ -1182,20 +1188,6 @@ class _FeelsCard extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.tonalIcon(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, 38),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-              ),
-              onPressed: () => context.go('/feelings'),
-              icon: const Icon(Icons.history_rounded, size: 18),
-              label: const Text('View history'),
-            ),
           ),
         ],
       ),

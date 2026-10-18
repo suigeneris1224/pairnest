@@ -301,6 +301,7 @@ class SectionCard extends StatelessWidget {
     this.icon,
     this.action = 'View All',
     this.onAction,
+    this.actionIcon,
     this.color,
     this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 16),
   });
@@ -310,6 +311,9 @@ class SectionCard extends StatelessWidget {
   final IconData? icon;
   final String action;
   final VoidCallback? onAction;
+
+  /// Shows this icon (with [action] as its tooltip) instead of "View All ›".
+  final IconData? actionIcon;
   final Color? color;
   final EdgeInsetsGeometry padding;
 
@@ -337,7 +341,16 @@ class SectionCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: compact ? 14.5 : null),
                     ),
                   ),
-                  if (onAction != null)
+                  if (onAction != null && actionIcon != null)
+                    IconButton(
+                      tooltip: action,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(actionIcon, size: 20, color: p.primaryDeep),
+                      onPressed: onAction,
+                    )
+                  else if (onAction != null)
                     InkWell(
                       onTap: onAction,
                       borderRadius: BorderRadius.circular(12),
@@ -444,7 +457,9 @@ class SpendingDonut extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(
                 children: [
-                  CategoryIcon(e.key, size: compact ? 24 : 28),
+                  CircleAvatar(radius: 5, backgroundColor: categoryStyle(e.key).color),
+                  const SizedBox(width: 8),
+                  CategoryIcon(e.key, size: compact ? 22 : 28),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1281,7 +1296,7 @@ class SkeletonList extends StatelessWidget {
 
 /// The couple's shared money as a Pairnest e-wallet card: palette gradient,
 /// wave pattern, chip and cardholder names. [child] is the
-/// balance in the middle; [strip] (optional) tucks under the card's bottom edge.
+/// balance in the middle; [strip] (optional) is a panel just below it.
 class WalletCard extends StatefulWidget {
   const WalletCard({
     super.key,
@@ -1296,9 +1311,19 @@ class WalletCard extends StatefulWidget {
     this.accent,
     this.emblem,
     this.corner,
+    this.cardRatio = WalletCard.ratio,
+    this.cardMinHeight = WalletCard.minHeight,
+    this.dense = false,
   });
 
   final Widget child;
+
+  /// Width ÷ height; Home uses a squatter card than a real one.
+  final double cardRatio;
+  final double cardMinHeight;
+
+  /// Tighter spacing around the chip, for the shorter Home card.
+  final bool dense;
 
   /// Bottom-right, where a real card puts its network logo.
   final Widget? corner;
@@ -1329,7 +1354,6 @@ class WalletCard extends StatefulWidget {
   /// Bank cards are 85.6 × 54 mm.
   static const ratio = 1.586;
   static const minHeight = 222.0;
-  static const _tuck = 18.0;
 
   @override
   State<WalletCard> createState() => _WalletCardState();
@@ -1346,16 +1370,15 @@ class _WalletCardState extends State<WalletCard> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        final height = math.max(c.maxWidth / WalletCard.ratio, WalletCard.minHeight);
+        final height = math.max(c.maxWidth / widget.cardRatio, widget.cardMinHeight);
         final card = SizedBox(height: height, child: _face(context));
         if (widget.strip == null) return card;
-        return Stack(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(10, height - WalletCard._tuck, 10, 0),
-              child: _Strip(child: widget.strip!),
-            ),
             card,
+            const SizedBox(height: 12),
+            _Strip(child: widget.strip!),
           ],
         );
       },
@@ -1424,13 +1447,17 @@ class _WalletCardState extends State<WalletCard> {
                             ],
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        SizedBox(height: widget.dense ? 6 : 10),
                         widget.emblem ??
                             Row(
                               children: [
-                                const SizedBox(width: 36, height: 27, child: CustomPaint(painter: _ChipPainter())),
+                                SizedBox(
+                                  width: widget.dense ? 30 : 36,
+                                  height: widget.dense ? 22 : 27,
+                                  child: const CustomPaint(painter: _ChipPainter()),
+                                ),
                                 const SizedBox(width: 10),
-                                Icon(Icons.contactless_outlined, size: 22, color: Colors.white.withValues(alpha: 0.85)),
+                                Icon(Icons.contactless_outlined, size: widget.dense ? 19 : 22, color: Colors.white.withValues(alpha: 0.85)),
                               ],
                             ),
                         const SizedBox(height: 4),
@@ -1479,7 +1506,7 @@ class _WalletCardState extends State<WalletCard> {
   }
 }
 
-/// The stats panel that tucks under a [WalletCard], like a card in its sleeve.
+/// The stats panel just below a [WalletCard].
 class _Strip extends StatelessWidget {
   const _Strip({required this.child});
 
@@ -1489,11 +1516,18 @@ class _Strip extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.pn;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, WalletCard._tuck + 12, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: p.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: p.isDark ? 0.25 : 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: child,
     );

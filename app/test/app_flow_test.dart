@@ -1270,10 +1270,20 @@ void main() {
     expect(find.text("You're doing great, together."), findsNothing);
     // Each spending category has its icon in the legend.
     expect(find.descendant(of: find.byType(SpendingDonut), matching: find.byType(CategoryIcon)), findsNWidgets(5));
+    // ...beside its colour dot, matching the donut.
+    expect(find.descendant(of: find.byType(SpendingDonut), matching: find.byType(CircleAvatar)), findsNWidgets(5));
+    // The Home card is a little shorter than a real card, and "Budget used" is its own card below it.
+    final cardBox = find.byType(WalletCard);
+    final faceBottom = tester.getTopLeft(cardBox).dy + 204;
+    expect(tester.getTopLeft(find.text('Budget used')).dy, greaterThan(faceBottom + 8));
+    expect(
+      tester.getSize(find.ancestor(of: find.text('Pairnest Card'), matching: find.byType(SizedBox)).first).height,
+      lessThanOrEqualTo(204),
+    );
 
-    await tester.ensureVisible(find.text('View history'));
+    await tester.ensureVisible(find.byTooltip('View history'));
     await _settle(tester);
-    await tester.tap(find.text('View history'));
+    await tester.tap(find.byTooltip('View history'));
     await _settle(tester);
     expect(container.read(routerProvider).state.uri.path, '/feelings');
   });
