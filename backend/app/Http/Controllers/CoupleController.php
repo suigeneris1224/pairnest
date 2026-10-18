@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Couple;
+use App\Models\Wallet;
 use App\Services\StarterGoals;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ class CoupleController extends Controller
         $couple = Couple::create($data);
         $user->couple()->associate($couple)->save();
         StarterGoals::forNewNest($couple, $user);
+        Wallet::ensureCash($couple, $user);
 
         return response()->json(['couple' => $couple->load('members')], 201);
     }
@@ -46,6 +48,7 @@ class CoupleController extends Controller
 
         $user->couple()->associate($couple)->save();
         StarterGoals::addGoals($couple, $user);
+        Wallet::ensureCash($couple, $user);
 
         return response()->json(['couple' => $couple->load('members')]);
     }

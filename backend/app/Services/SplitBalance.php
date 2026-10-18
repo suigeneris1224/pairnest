@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Couple;
+use App\Models\Settlement;
 use Carbon\CarbonImmutable;
 
 class SplitBalance
@@ -67,7 +68,7 @@ class SplitBalance
                 'topped_up_this_month' => round($paid($toppedUp, $m), 2),
             ])->values(),
             'shared_spent_this_month' => round($sharedSpent, 2),
-            'settlements' => $couple->settlements()->with('from:id,name', 'to:id,name')
+            'settlements' => $couple->settlements()->with(Settlement::WITH)
                 ->latest('settled_on')->latest('id')->limit(10)->get(),
         ];
     }

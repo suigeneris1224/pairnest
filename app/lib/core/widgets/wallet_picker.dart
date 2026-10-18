@@ -9,7 +9,15 @@ import 'wallet_brands.dart';
 /// Picks one of [userId]'s wallets or a shared one, or none. Shows nothing
 /// until the couple has wallets.
 class WalletDropdown extends ConsumerWidget {
-  const WalletDropdown({super.key, required this.label, required this.value, required this.onChanged, this.userId});
+  const WalletDropdown({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.userId,
+    this.personalOnly = false,
+    this.noneLabel = 'No wallet',
+  });
 
   final String label;
   final int? value;
@@ -18,12 +26,16 @@ class WalletDropdown extends ConsumerWidget {
   /// Whose wallets can be picked; you by default.
   final int? userId;
 
+  /// Only [userId]'s own wallets, not shared ones (e.g. settling up).
+  final bool personalOnly;
+  final String noneLabel;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final owner = userId ?? ref.watch(meProvider).user.id;
     final wallets = [
       for (final w in ref.watch(walletsProvider).value ?? const <Wallet>[])
-        if (w.usableBy(owner)) w,
+        if (personalOnly ? w.ownerId == owner : w.usableBy(owner)) w,
     ];
     if (wallets.isEmpty) return const SizedBox.shrink();
     final current = wallets.any((w) => w.id == value) ? value : null;
@@ -36,7 +48,7 @@ class WalletDropdown extends ConsumerWidget {
         decoration: InputDecoration(labelText: label),
         borderRadius: BorderRadius.circular(14),
         items: [
-          const DropdownMenuItem<int?>(value: null, child: Text('No wallet')),
+          DropdownMenuItem<int?>(value: null, child: Text(noneLabel)),
           for (final w in wallets)
             DropdownMenuItem<int?>(
               value: w.id,

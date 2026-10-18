@@ -555,7 +555,8 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                         for (final w in wallets)
                           FilterChip(
                             avatar: BrandBadge(brandOf(w.provider), size: 20),
-                            label: Text(w.name),
+                            // Both of you have a "Cash": say whose a partner's wallet is.
+                            label: Text(w.isShared || w.ownerId == me.user.id ? w.name : '${w.name} · ${w.ownerName}'),
                             selected: _f.wallets.contains(w.id),
                             onSelected: (on) =>
                                 setState(() => _f = _f.copyWith(wallets: on ? {..._f.wallets, w.id} : ({..._f.wallets}..remove(w.id)))),

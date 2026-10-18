@@ -379,10 +379,11 @@ class ApiRepository implements PairnestRepository {
     required int toWalletId,
     required double amount,
     String? note,
+    double? fee,
   }) => _call(() async {
     final res = await _dio.post(
       'moves',
-      data: {'from_wallet_id': fromWalletId, 'to_wallet_id': toWalletId, 'amount': amount, 'note': ?note},
+      data: {'from_wallet_id': fromWalletId, 'to_wallet_id': toWalletId, 'amount': amount, 'note': ?note, 'fee': ?fee},
     );
     final data = res.data as Map<String, dynamic>;
     return (
@@ -439,8 +440,11 @@ class ApiRepository implements PairnestRepository {
   Future<SplitBalance> balance() => _call(() async => SplitBalance.fromJson((await _dio.get('balance')).data as Map<String, dynamic>));
 
   @override
-  Future<Settlement> settleUp({required double amount, required int fromUserId}) => _call(() async {
-    final res = await _dio.post('settlements', data: {'amount': amount, 'from_user_id': fromUserId});
+  Future<Settlement> settleUp({required double amount, required int fromUserId, int? fromWalletId, int? toWalletId}) => _call(() async {
+    final res = await _dio.post(
+      'settlements',
+      data: {'amount': amount, 'from_user_id': fromUserId, 'from_wallet_id': ?fromWalletId, 'to_wallet_id': ?toWalletId},
+    );
     return Settlement.fromJson(res.data as Map<String, dynamic>);
   });
 

@@ -275,6 +275,9 @@ class _Details extends ConsumerWidget {
         .fold(0.0, (a, t) => a + t.amount);
     final canEdit = wallet.usableBy(me.user.id);
     final private = wallet.balance == null;
+    final myCash = (ref.watch(walletsProvider).value ?? const <Wallet>[])
+        .where((w) => w.isCash && w.ownerId == me.user.id && w.id != wallet.id)
+        .firstOrNull;
     String money(double v) => hide ? '₱••••' : peso(v);
 
     return Column(
@@ -316,6 +319,12 @@ class _Details extends ConsumerWidget {
                   label: const Text('Move money'),
                   onPressed: () => openMoveSheet(context, ref, from: wallet),
                 ),
+              if (myCash != null && !wallet.isCash && !wallet.isCredit && !wallet.isShared)
+                ActionChip(
+                  avatar: const Icon(Icons.local_atm_rounded, size: 18),
+                  label: const Text('Withdraw cash'),
+                  onPressed: () => openMoveSheet(context, ref, from: wallet, to: myCash),
+                ),
               ActionChip(
                 avatar: const Icon(Icons.tune_rounded, size: 18),
                 label: const Text('Correct balance'),
@@ -326,11 +335,12 @@ class _Details extends ConsumerWidget {
                 label: const Text('Edit'),
                 onPressed: () => openWalletEditor(context, existing: wallet),
               ),
-              ActionChip(
-                avatar: const Icon(Icons.archive_outlined, size: 18),
-                label: const Text('Remove'),
-                onPressed: () => _archive(context, ref),
-              ),
+              if (!wallet.builtin)
+                ActionChip(
+                  avatar: const Icon(Icons.archive_outlined, size: 18),
+                  label: const Text('Remove'),
+                  onPressed: () => _archive(context, ref),
+                ),
             ],
           )
         else

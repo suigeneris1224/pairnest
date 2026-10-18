@@ -118,6 +118,7 @@ class Txn {
     this.goalId,
     this.walletId,
     this.toWalletId,
+    this.moveId,
   });
 
   factory Txn.fromJson(Map<String, dynamic> j) => Txn(
@@ -134,6 +135,7 @@ class Txn {
     goalId: j['goal_id'] as int?,
     walletId: j['wallet_id'] as int?,
     toWalletId: j['to_wallet_id'] as int?,
+    moveId: j['move_id'] as int?,
   );
 
   final int id;
@@ -155,6 +157,9 @@ class Txn {
 
   /// Where a move's money landed.
   final int? toWalletId;
+
+  /// On a fee, the move it was charged on; deleting the move removes it.
+  final int? moveId;
 
   bool get isExpense => type == 'expense';
   bool get isIncome => type == 'income';
@@ -222,6 +227,7 @@ class Wallet {
     this.last4,
     this.balance,
     this.showBalanceToPartner = false,
+    this.builtin = false,
   });
 
   factory Wallet.fromJson(Map<String, dynamic> j) => Wallet(
@@ -234,6 +240,7 @@ class Wallet {
     last4: j['last4'] as String?,
     balance: j['balance'] == null ? null : _num(j['balance']),
     showBalanceToPartner: j['show_balance_to_partner'] == true || j['show_balance_to_partner'] == 1,
+    builtin: j['builtin'] == true || j['builtin'] == 1,
   );
 
   final int id;
@@ -255,7 +262,11 @@ class Wallet {
   final double? balance;
   final bool showBalanceToPartner;
 
+  /// Everyone's Cash wallet: it can be renamed, but not removed.
+  final bool builtin;
+
   bool get isShared => ownerId == null;
+  bool get isCash => kind == 'cash';
   bool get isCredit => kind == 'credit';
 
   /// You can spend from, move from and edit shared wallets and your own.
@@ -271,6 +282,7 @@ class Wallet {
     last4: last4,
     balance: balance ?? this.balance,
     showBalanceToPartner: showBalanceToPartner,
+    builtin: builtin,
   );
 }
 
@@ -520,6 +532,10 @@ class Settlement {
     required this.toName,
     required this.amount,
     required this.settledOn,
+    this.fromWalletId,
+    this.fromWalletName,
+    this.toWalletId,
+    this.toWalletName,
   });
 
   factory Settlement.fromJson(Map<String, dynamic> j) => Settlement(
@@ -530,6 +546,10 @@ class Settlement {
     toName: ((j['to'] as Map?)?['name'] ?? '') as String,
     amount: _num(j['amount']),
     settledOn: DateTime.parse(j['settled_on'] as String),
+    fromWalletId: j['from_wallet_id'] as int?,
+    fromWalletName: (j['from_wallet'] as Map?)?['name'] as String?,
+    toWalletId: j['to_wallet_id'] as int?,
+    toWalletName: (j['to_wallet'] as Map?)?['name'] as String?,
   );
 
   final int id;
@@ -539,6 +559,12 @@ class Settlement {
   final String toName;
   final double amount;
   final DateTime settledOn;
+
+  /// The wallets the money left and landed in, when recorded.
+  final int? fromWalletId;
+  final String? fromWalletName;
+  final int? toWalletId;
+  final String? toWalletName;
 }
 
 /// What one partner has paid: split expenses ever, and everything this month.

@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class WalletController extends Controller
 {
@@ -45,6 +46,10 @@ class WalletController extends Controller
         $wallet = $this->editable($request, $id);
         $data = $this->validated($request, partial: true);
         unset($data['is_shared'], $data['balance']);
+        if ($wallet->builtin) {
+            // The built-in Cash wallet can be renamed, but stays cash.
+            unset($data['kind'], $data['provider']);
+        }
         $wallet->update($data);
 
         return $this->show($request, $wallet);
@@ -65,9 +70,16 @@ class WalletController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $wallet = $this->editable($request, $id);
-        $used = $request->user()->couple->transactions()
+        if ($wallet->builtin) {
+            throw ValidationException::withMessages(['wallet' => "{$wallet->name} is built in. You can rename it or correct its balance, but not remove it."]);
+        }
+        $couple = $request->user()->couple;
+        $used = $couple->transactions()
             ->where(fn ($q) => $q->where('wallet_id', $wallet->id)->orWhere('to_wallet_id', $wallet->id))
-            ->exists();
+            ->exists()
+            || $couple->settlements()
+                ->where(fn ($q) => $q->where('from_wallet_id', $wallet->id)->orWhere('to_wallet_id', $wallet->id))
+                ->exists();
         $used ? $wallet->update(['archived_at' => CarbonImmutable::now()]) : $wallet->delete();
 
         return response()->json(null, 204);

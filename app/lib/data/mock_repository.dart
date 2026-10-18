@@ -119,14 +119,17 @@ class MockRepository implements PairnestRepository {
       occurredOn: day(d),
       walletId: wallet,
     );
-    // Our Maya (shared), Alex's GCash and BPI credit card, Sam's BDO debit (balance private).
+    // Our Maya (shared), Alex's GCash and BPI credit card, Sam's BDO debit (balance
+    // private), and each partner's built-in Cash wallet.
     _wallets.addAll([
       const Wallet(id: 1, name: 'Our Maya', kind: 'ewallet', provider: 'maya'),
       Wallet(id: 2, name: 'GCash', kind: 'ewallet', provider: 'gcash', ownerId: _user.id, ownerName: _user.name),
       Wallet(id: 3, name: 'BPI Credit', kind: 'credit', provider: 'bpi', ownerId: _user.id, ownerName: _user.name, last4: '4821'),
       Wallet(id: 4, name: 'BDO Debit', kind: 'debit', provider: 'bdo', ownerId: _sam.id, ownerName: _sam.name, last4: '1029'),
+      Wallet(id: 5, name: 'Cash', kind: 'cash', provider: 'cash', ownerId: _user.id, ownerName: _user.name, builtin: true),
+      Wallet(id: 6, name: 'Cash', kind: 'cash', provider: 'cash', ownerId: _sam.id, ownerName: _sam.name, builtin: true),
     ]);
-    _openings.addAll({1: 3000, 2: 6630, 3: 0, 4: 22800});
+    _openings.addAll({1: 3000, 2: 6630, 3: 0, 4: 22800, 5: 1500, 6: 800});
     _txns.addAll([
       t(1, _user, 'income', 45000, 'income', 'Salary', 'bank', false, 1),
       t(2, _user, 'expense', 3800, 'food', 'Weekly groceries', 'card', true, 3, 3),
@@ -316,10 +319,19 @@ class MockRepository implements PairnestRepository {
   Future<Me> createNest(String theme) => _delay(() {
     _couple = Couple(id: 1, inviteCode: 'NEST01', theme: theme, members: [_user], stage: _profile.stage);
     _applyStarterGoals();
+    _ensureCash();
     final budget = _profile.monthlyBudget ?? 0;
     if (budget > 0) _budgets[monthKey(DateTime.now())] = (budget, const {});
     return _me = Me(user: _user, couple: _couple, partnerName: _profile.partnerName);
   });
+
+  /// Your built-in Cash wallet, as the server adds it when you create or join a nest.
+  void _ensureCash() {
+    if (_wallets.any((w) => w.builtin && w.ownerId == _user.id)) return;
+    final w = Wallet(id: _nextId++, name: 'Cash', kind: 'cash', provider: 'cash', ownerId: _user.id, ownerName: _user.name, builtin: true);
+    _wallets.add(w);
+    _openings[w.id] = 0;
+  }
 
   /// Onboarding goal picks become savings goals the nest doesn't have yet.
   void _applyStarterGoals() {
@@ -346,6 +358,7 @@ class MockRepository implements PairnestRepository {
   Future<Me> joinNest(String code) => _delay(() {
     if (code.trim().length != 6) throw Exception("We couldn't find a nest with that code.");
     _couple = _demoCouple([_sam, _user]);
+    _ensureCash();
     return _me = Me(user: _user, couple: _couple);
   });
 
@@ -465,11 +478,20 @@ class MockRepository implements PairnestRepository {
   });
 
   @override
-  Future<Settlement> settleUp({required double amount, required int fromUserId}) => _delay(() {
+  Future<Settlement> settleUp({required double amount, required int fromUserId, int? fromWalletId, int? toWalletId}) => _delay(() {
     final members = _couple?.members ?? const <Member>[];
     if (members.length < 2) throw Exception('Your partner needs to join before you can settle up.');
     final from = members.firstWhere((m) => m.id == fromUserId);
     final to = members.firstWhere((m) => m.id != fromUserId);
+    Wallet? own(int? id, Member m) {
+      if (id == null) return null;
+      final w = _wallets.where((w) => w.id == id).firstOrNull;
+      if (w == null || w.ownerId != m.id) throw Exception("Pick one of ${m.id == _user.id ? 'your' : "${m.name}'s"} own wallets.");
+      return w;
+    }
+
+    final fromWallet = own(fromWalletId, from);
+    final toWallet = own(toWalletId, to);
     final now = DateTime.now();
     final s = Settlement(
       id: _nextId++,
@@ -479,6 +501,10 @@ class MockRepository implements PairnestRepository {
       toName: to.name,
       amount: amount,
       settledOn: DateTime(now.year, now.month, now.day),
+      fromWalletId: fromWallet?.id,
+      fromWalletName: fromWallet?.name,
+      toWalletId: toWallet?.id,
+      toWalletName: toWallet?.name,
     );
     _settlements.add(s);
     return s;
@@ -539,6 +565,10 @@ class MockRepository implements PairnestRepository {
         flows[t.walletId!] = (flows[t.walletId!] ?? 0) + (t.isIncome || t.isRelease ? t.amount : -t.amount);
       }
       if (t.isMove && t.toWalletId != null) flows[t.toWalletId!] = (flows[t.toWalletId!] ?? 0) + t.amount;
+    }
+    for (final s in _settlements) {
+      if (s.fromWalletId != null) flows[s.fromWalletId!] = (flows[s.fromWalletId!] ?? 0) - s.amount;
+      if (s.toWalletId != null) flows[s.toWalletId!] = (flows[s.toWalletId!] ?? 0) + s.amount;
     }
     return flows;
   }
@@ -601,6 +631,7 @@ class MockRepository implements PairnestRepository {
     required int toWalletId,
     required double amount,
     String? note,
+    double? fee,
   }) async {
     if (fromWalletId == toWalletId) throw Exception('Pick two different wallets.');
     final from = _rawWallet(_checkWallet(fromWalletId, _user.id)!);
@@ -621,6 +652,24 @@ class MockRepository implements PairnestRepository {
       toWalletId: to.id,
     );
     _txns.add(move);
+    if ((fee ?? 0) > 0) {
+      _txns.add(
+        Txn(
+          id: _nextId++,
+          userId: _user.id,
+          userName: _user.name,
+          type: 'expense',
+          amount: fee!,
+          category: 'others',
+          title: 'Fee · ${from.name} → ${to.name}',
+          paymentMethod: move.paymentMethod,
+          isSplit: false,
+          occurredOn: move.occurredOn,
+          walletId: from.id,
+          moveId: move.id,
+        ),
+      );
+    }
     return (transaction: move, wallets: await wallets());
   }
 
@@ -643,11 +692,31 @@ class MockRepository implements PairnestRepository {
   Future<Wallet> updateWallet(int id, WalletDraft d) => _delay(() {
     final i = _myWalletIndex(id);
     final old = _wallets[i];
-    return _present(_wallets[i] = _walletFrom(id, d, ownerId: old.ownerId, ownerName: old.ownerName));
+    final next = _walletFrom(id, d, ownerId: old.ownerId, ownerName: old.ownerName);
+    return _present(
+      _wallets[i] = old.builtin
+          ? Wallet(
+              id: id,
+              name: next.name,
+              kind: old.kind,
+              provider: old.provider,
+              ownerId: old.ownerId,
+              ownerName: old.ownerName,
+              showBalanceToPartner: next.showBalanceToPartner,
+              builtin: true,
+            )
+          : next,
+    );
   });
 
   @override
-  Future<void> archiveWallet(int id) => _delay(() => _wallets.removeAt(_myWalletIndex(id)));
+  Future<void> archiveWallet(int id) => _delay(() {
+    final i = _myWalletIndex(id);
+    if (_wallets[i].builtin) {
+      throw Exception("${_wallets[i].name} is built in. You can rename it or correct its balance, but not remove it.");
+    }
+    _wallets.removeAt(i);
+  });
 
   @override
   Future<Wallet> setWalletBalance(int id, double balance) => _delay(() {
@@ -848,6 +917,8 @@ class MockRepository implements PairnestRepository {
     if (_txns[i].isRelease) throw Exception('Restore the goal instead.');
     final t = _txns.removeAt(i);
     if (t.isTransfer) _addToGoal(t.goalId, -t.amount);
+    // A move's fee goes with it.
+    _txns.removeWhere((f) => f.moveId == t.id);
   });
 
   @override

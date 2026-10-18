@@ -10,8 +10,8 @@ import '../../core/widgets/wallet_brands.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 
-/// Moves money between two wallets, e.g. topping up a shared one or paying a
-/// card. Shows "Moved · Undo" once done.
+/// Moves money between two wallets, e.g. topping up a shared one, paying a
+/// card or withdrawing cash, with an optional fee. Shows "Moved · Undo" once done.
 Future<void> openMoveSheet(BuildContext context, WidgetRef ref, {Wallet? from, Wallet? to, double? amount}) async {
   final wallets = [
     for (final w in ref.read(walletsProvider).value ?? const <Wallet>[])
@@ -21,7 +21,7 @@ Future<void> openMoveSheet(BuildContext context, WidgetRef ref, {Wallet? from, W
     showSnack(context, 'Add another wallet to move money between them.');
     return;
   }
-  final result = await showModalBottomSheet<({int from, int to, double amount, String note})>(
+  final result = await showModalBottomSheet<({int from, int to, double amount, double fee, String note})>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -37,6 +37,7 @@ Future<void> openMoveSheet(BuildContext context, WidgetRef ref, {Wallet? from, W
       toWalletId: result.to,
       amount: result.amount,
       note: result.note.isEmpty ? null : result.note,
+      fee: result.fee > 0 ? result.fee : null,
     );
     invalidateMoney(ref);
     HapticFeedback.lightImpact();
@@ -77,11 +78,13 @@ class _MoveSheetState extends State<_MoveSheet> {
     text: widget.amount == null ? '' : widget.amount!.toStringAsFixed(widget.amount! == widget.amount!.roundToDouble() ? 0 : 2),
   );
   final _note = TextEditingController();
+  final _fee = TextEditingController();
 
   @override
   void dispose() {
     _amount.dispose();
     _note.dispose();
+    _fee.dispose();
     super.dispose();
   }
 
@@ -90,6 +93,11 @@ class _MoveSheetState extends State<_MoveSheet> {
   double? get _value {
     final v = double.tryParse(_amount.text.replaceAll(',', ''));
     return v == null || v <= 0 ? null : v;
+  }
+
+  double get _feeValue {
+    final v = double.tryParse(_fee.text.replaceAll(',', ''));
+    return v == null || v <= 0 ? 0 : v;
   }
 
   void _setFrom(int id) => setState(() {
@@ -107,7 +115,14 @@ class _MoveSheetState extends State<_MoveSheet> {
     final p = context.pn;
     final to = _w(_to);
     final value = _value;
-    final title = to.isShared ? 'Top up ${to.name}' : (to.isCredit ? 'Pay ${to.name}' : 'Move money');
+    final fee = _feeValue;
+    final title = to.isShared
+        ? 'Top up ${to.name}'
+        : to.isCredit
+        ? 'Pay ${to.name}'
+        : to.isCash && !_w(_from).isCash
+        ? 'Withdraw cash'
+        : 'Move money';
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SingleChildScrollView(
@@ -143,6 +158,19 @@ class _MoveSheetState extends State<_MoveSheet> {
             ),
             const SizedBox(height: 12),
             TextField(
+              controller: _fee,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              decoration: InputDecoration(
+                labelText: 'Fee (optional)',
+                prefixText: '₱ ',
+                helperText: 'e.g. ₱15 InstaPay, ₱18 ATM. Counts as spending from ${_w(_from).name}.',
+                helperMaxLines: 2,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: _note,
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(labelText: 'Note (optional)', hintText: 'e.g. My share for October'),
@@ -151,8 +179,14 @@ class _MoveSheetState extends State<_MoveSheet> {
             FilledButton(
               onPressed: value == null
                   ? null
-                  : () => Navigator.pop(context, (from: _from, to: _to, amount: value, note: _note.text.trim())),
-              child: Text(value == null ? 'Move' : 'Move ${peso(value)}'),
+                  : () => Navigator.pop(context, (from: _from, to: _to, amount: value, fee: fee, note: _note.text.trim())),
+              child: Text(
+                value == null
+                    ? 'Move'
+                    : fee > 0
+                    ? 'Move ${peso(value)} + ${peso(fee)} fee'
+                    : 'Move ${peso(value)}',
+              ),
             ),
           ],
         ),

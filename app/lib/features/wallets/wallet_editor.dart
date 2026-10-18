@@ -211,58 +211,66 @@ class _WalletEditorState extends ConsumerState<WalletEditor> {
             const SizedBox(height: 12),
             BankCard(preview, hide: false),
             const SizedBox(height: 16),
-            for (final group in walletGroups) ...[
-              Text(group, style: label),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 10,
-                children: [
-                  for (final b in walletBrands.where((b) => b.group == group))
-                    Semantics(
-                      button: true,
-                      selected: b.key == _provider,
-                      label: b.name,
-                      excludeSemantics: true,
-                      child: InkWell(
-                        onTap: () => _pickBrand(b),
-                        borderRadius: BorderRadius.circular(12),
-                        child: SizedBox(
-                          width: 64,
-                          child: Column(
-                            children: [
-                              BrandBadge(b, size: 40, selected: b.key == _provider),
-                              const SizedBox(height: 4),
-                              Text(
-                                b.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: b.key == _provider ? p.heading : p.muted,
-                                  fontWeight: b.key == _provider ? FontWeight.w700 : FontWeight.w500,
+            if (_existing?.builtin ?? false) ...[
+              Text(
+                'Your Cash wallet is built in, for withdrawals and paying in cash. You can rename it, but not remove it.',
+                style: TextStyle(color: p.muted, fontSize: 12.5, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+            ] else ...[
+              for (final group in walletGroups) ...[
+                Text(group, style: label),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 10,
+                  children: [
+                    for (final b in walletBrands.where((b) => b.group == group))
+                      Semantics(
+                        button: true,
+                        selected: b.key == _provider,
+                        label: b.name,
+                        excludeSemantics: true,
+                        child: InkWell(
+                          onTap: () => _pickBrand(b),
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            width: 64,
+                            child: Column(
+                              children: [
+                                BrandBadge(b, size: 40, selected: b.key == _provider),
+                                const SizedBox(height: 4),
+                                Text(
+                                  b.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: b.key == _provider ? p.heading : p.muted,
+                                    fontWeight: b.key == _provider ? FontWeight.w700 : FontWeight.w500,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ],
+              Text('Type', style: label),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final e in walletKinds.entries)
+                    ChoiceChip(label: Text(e.value), selected: _kind == e.key, onSelected: (_) => setState(() => _kind = e.key)),
                 ],
               ),
               const SizedBox(height: 14),
             ],
-            Text('Type', style: label),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final e in walletKinds.entries)
-                  ChoiceChip(label: Text(e.value), selected: _kind == e.key, onSelected: (_) => setState(() => _kind = e.key)),
-              ],
-            ),
-            const SizedBox(height: 14),
             TextField(
               controller: _name,
               textCapitalization: TextCapitalization.words,

@@ -20,7 +20,7 @@ class Wallet extends Model
         'cash', 'other',
     ];
 
-    protected $fillable = ['user_id', 'name', 'kind', 'provider', 'last4', 'opening_balance', 'show_balance_to_partner', 'archived_at'];
+    protected $fillable = ['user_id', 'name', 'kind', 'provider', 'last4', 'opening_balance', 'show_balance_to_partner', 'builtin', 'archived_at'];
 
     protected $hidden = ['opening_balance', 'couple_id'];
 
@@ -29,6 +29,7 @@ class Wallet extends Model
         return [
             'opening_balance' => 'float',
             'show_balance_to_partner' => 'boolean',
+            'builtin' => 'boolean',
             'archived_at' => 'datetime',
         ];
     }
@@ -58,7 +59,8 @@ class Wallet extends Model
     /**
      * Money in minus money out, per wallet id, from every transaction:
      * income and releases land in a wallet; expenses and goal transfers leave
-     * it; a move leaves one wallet and lands in another.
+     * it; a move leaves one wallet and lands in another, and so does paying
+     * a partner back when the settle-up names wallets.
      *
      * @return array<int, float>
      */
@@ -75,8 +77,19 @@ class Wallet extends Model
             ->selectRaw('to_wallet_id as id, sum(amount) as net')
             ->pluck('net', 'id');
 
+        $settledOut = DB::table('settlements')
+            ->where('couple_id', $coupleId)->whereNotNull('from_wallet_id')
+            ->groupBy('from_wallet_id')
+            ->selectRaw('from_wallet_id as id, -sum(amount) as net')
+            ->pluck('net', 'id');
+        $settledIn = DB::table('settlements')
+            ->where('couple_id', $coupleId)->whereNotNull('to_wallet_id')
+            ->groupBy('to_wallet_id')
+            ->selectRaw('to_wallet_id as id, sum(amount) as net')
+            ->pluck('net', 'id');
+
         $flows = [];
-        foreach ([$out, $in] as $rows) {
+        foreach ([$out, $in, $settledOut, $settledIn] as $rows) {
             foreach ($rows as $id => $net) {
                 $flows[$id] = round(($flows[$id] ?? 0) + (float) $net, 2);
             }
@@ -123,6 +136,15 @@ class Wallet extends Model
         $wallet = $couple->wallets()->active()->find($id);
 
         return $wallet && $wallet->usableBy($userId) ? $wallet : null;
+    }
+
+    /** Gives $user their built-in Cash wallet in $couple, unless they have one. */
+    public static function ensureCash(Couple $couple, User $user): void
+    {
+        $couple->wallets()->firstOrCreate(
+            ['user_id' => $user->id, 'builtin' => true],
+            ['name' => 'Cash', 'kind' => 'cash', 'provider' => 'cash', 'opening_balance' => 0],
+        );
     }
 
     public function scopeActive(Builder $query): void

@@ -11,6 +11,7 @@ import '../../core/widgets/common.dart';
 import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/member_colors.dart';
 import '../../core/widgets/nest_ui.dart';
+import '../../core/widgets/wallet_picker.dart';
 import '../../data/models.dart';
 import '../../data/providers.dart';
 
@@ -25,18 +26,30 @@ String _plain(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toS
 /// Asks how much was paid back (the full balance by default), records it and
 /// offers Undo.
 Future<void> settleUp(BuildContext context, WidgetRef ref, Owes owes) async {
-  final amount = await showModalBottomSheet<double>(
+  // The sheet preselects your wallet, so have them loaded (fine without).
+  await ref.read(walletsProvider.future).catchError((Object _) => const <Wallet>[]);
+  if (!context.mounted) return;
+  final picked = await showModalBottomSheet<({double amount, int? fromWallet, int? toWallet})>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
     builder: (_) => _SettleSheet(owes),
   );
-  if (amount == null || !context.mounted) return;
+  if (picked == null || !context.mounted) return;
+  final amount = picked.amount;
+  final meId = ref.read(meProvider).user.id;
+  final mine = owes.from.id == meId ? picked.fromWallet : picked.toWallet;
+  if (mine != null) ref.read(prefsProvider).setInt(_lastSettleWalletKey, mine);
   final repo = ref.read(repositoryProvider);
   final messenger = ScaffoldMessenger.of(context);
   final container = ProviderScope.containerOf(context, listen: false);
   try {
-    final settlement = await repo.settleUp(amount: amount, fromUserId: owes.from.id);
+    final settlement = await repo.settleUp(
+      amount: amount,
+      fromUserId: owes.from.id,
+      fromWalletId: picked.fromWallet,
+      toWalletId: picked.toWallet,
+    );
     invalidateMoney(ref);
     ref.read(mascotControllerProvider).react(MascotReaction.cheer);
     HapticFeedback.lightImpact();
@@ -52,6 +65,8 @@ Future<void> settleUp(BuildContext context, WidgetRef ref, Owes owes) async {
     showSnackOn(messenger, friendlyError(e));
   }
 }
+
+const _lastSettleWalletKey = 'last_settle_wallet_id';
 
 class SettleScreen extends ConsumerWidget {
   const SettleScreen({super.key});
@@ -266,7 +281,14 @@ class _HistoryCard extends ConsumerWidget {
                               '${who(s.fromId, s.fromName)} paid ${whom(s.toId, s.toName)}',
                               style: const TextStyle(fontWeight: FontWeight.w600),
                             ),
-                            Text(shortDate(s.settledOn), style: TextStyle(color: p.muted, fontSize: 12)),
+                            Text(
+                              [
+                                if (s.fromWalletName != null || s.toWalletName != null)
+                                  '${s.fromWalletName ?? 'Cash'} → ${s.toWalletName ?? 'Cash'}',
+                                shortDate(s.settledOn),
+                              ].join(' · '),
+                              style: TextStyle(color: p.muted, fontSize: 12),
+                            ),
                           ],
                         ),
                       ),
@@ -292,6 +314,21 @@ class _SettleSheet extends ConsumerStatefulWidget {
 class _SettleSheetState extends ConsumerState<_SettleSheet> {
   late final _amount = TextEditingController(text: _plain(widget.owes.amount));
   String? _error;
+  late int? _fromWallet = _myDefault(widget.owes.from.id);
+  late int? _toWallet = _myDefault(widget.owes.to.id);
+
+  /// Your side starts on the wallet you settled from last time, else your
+  /// Cash; your partner's side starts untracked.
+  int? _myDefault(int userId) {
+    final me = ref.read(meProvider).user.id;
+    if (userId != me) return null;
+    final mine = [
+      for (final w in knownWallets(ref))
+        if (w.ownerId == me) w,
+    ];
+    final last = ref.read(prefsProvider).getInt(_lastSettleWalletKey);
+    return mine.where((w) => w.id == last).firstOrNull?.id ?? mine.where((w) => w.builtin).firstOrNull?.id;
+  }
 
   @override
   void dispose() {
@@ -308,7 +345,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
     } else if (v > widget.owes.amount + 0.001) {
       setState(() => _error = "That's more than the ${peso(widget.owes.amount)} owed.");
     } else {
-      Navigator.pop(context, v);
+      Navigator.pop(context, (amount: v, fromWallet: _fromWallet, toWallet: _toWallet));
     }
   }
 
@@ -354,6 +391,22 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
               ),
               const SizedBox(height: 8),
               Text('Paying part of it is fine. The rest stays on the balance.', style: TextStyle(color: p.muted, fontSize: 12.5)),
+              WalletDropdown(
+                label: owes.from.id == me.user.id ? 'Paid from your wallet' : "Paid from ${owes.from.name}'s wallet",
+                userId: owes.from.id,
+                personalOnly: true,
+                noneLabel: 'Not tracked',
+                value: _fromWallet,
+                onChanged: (id) => setState(() => _fromWallet = id),
+              ),
+              WalletDropdown(
+                label: owes.to.id == me.user.id ? 'Received in your wallet' : "Received in ${owes.to.name}'s wallet",
+                userId: owes.to.id,
+                personalOnly: true,
+                noneLabel: 'Not tracked',
+                value: _toWallet,
+                onChanged: (id) => setState(() => _toWallet = id),
+              ),
               const SizedBox(height: 18),
               FilledButton(onPressed: _submit, child: Text(v == null || v <= 0 ? 'Record payment' : 'Record ${peso(v)}')),
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),

@@ -200,7 +200,12 @@ void main() {
     final seenBySam = await sam.wallets();
     expect(seenBySam.firstWhere((w) => w.id == gcash.id).balance, isNull);
     expect(seenBySam.firstWhere((w) => w.id == ours.id).balance, 0);
-    expect((await sam.dashboard()).wallets, hasLength(3));
+    // Three added, plus each partner's built-in Cash.
+    expect((await sam.dashboard()).wallets, hasLength(5));
+    final alexCash = mine.firstWhere((w) => w.builtin && w.ownerId == gcash.ownerId);
+    final samCash = seenBySam.firstWhere((w) => w.builtin && w.ownerId != gcash.ownerId);
+    expect(alexCash.isCash, isTrue);
+    await expectLater(alex.archiveWallet(alexCash.id), throwsA(anything));
     await alex.updateWallet(gcash.id, const WalletDraft(name: 'GCash', kind: 'ewallet', provider: 'gcash', showBalanceToPartner: true));
     expect((await sam.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
     // Moving money: a top-up into the shared wallet isn't spending, and deleting it undoes it.
@@ -212,6 +217,21 @@ void main() {
     expect(split.members.firstWhere((m) => m.name == 'Alex').toppedUpThisMonth, 1000);
     await expectLater(sam.moveMoney(fromWalletId: gcash.id, toWalletId: ours.id, amount: 1), throwsA(anything));
     await alex.deleteTransaction(topUp.transaction.id);
+    expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
+    // A withdrawal with a fee: the fee is spending from the same wallet, and goes with the move.
+    final atm = await alex.moveMoney(fromWalletId: gcash.id, toWalletId: alexCash.id, amount: 500, fee: 15);
+    expect(atm.wallets.firstWhere((w) => w.id == gcash.id).balance, 4100 - 515);
+    final fee = (await alex.transactions(month: DateTime.now())).firstWhere((t) => t.moveId == atm.transaction.id);
+    expect(fee.isExpense, isTrue);
+    expect(fee.amount, 15);
+    await alex.deleteTransaction(atm.transaction.id);
+    expect((await alex.transactions(month: DateTime.now())).where((t) => t.moveId == atm.transaction.id), isEmpty);
+    // Settling up can come out of one wallet and land in another.
+    final paidBack = await sam.settleUp(amount: 50, fromUserId: samCash.ownerId!, fromWalletId: samCash.id, toWalletId: gcash.id);
+    expect(paidBack.toWalletName, 'GCash');
+    expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4150);
+    await expectLater(sam.settleUp(amount: 1, fromUserId: samCash.ownerId!, fromWalletId: gcash.id), throwsA(anything));
+    await sam.deleteSettlement(paidBack.id);
     expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
     // Paydays land in a wallet, bills are paid from one, goal savings come from one.
     final pay = await alex.addPayday(PaydayDraft(title: 'Bonus', amount: 900, frequency: 'weekly', nextOn: month, walletId: gcash.id));

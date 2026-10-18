@@ -72,6 +72,10 @@ class PairnestApiTest extends TestCase
         $names = collect($this->as($samToken)->getJson('/api/v1/goals')->json())->pluck('name')->sort()->values()->all();
         $this->assertSame(['Baby Fund', 'Emergency Fund', 'Our Home', 'Our Wedding', 'Pet Fund', 'Travel Fund'], $names);
         $this->as($samToken)->getJson('/api/v1/budgets/'.now()->format('Y-m'))->assertJsonPath('total', 30000);
+        // Each partner gets a built-in Cash wallet.
+        $wallets = collect($this->as($samToken)->getJson('/api/v1/wallets')->json());
+        $this->assertSame([['Cash', 'cash', true], ['Cash', 'cash', true]], $wallets->map(fn ($w) => [$w['name'], $w['kind'], $w['builtin']])->all());
+        $this->assertSame(['Alex', 'Sam'], $wallets->pluck('user.name')->sort()->values()->all());
 
         [$thirdToken] = $this->start('Third');
         $this->as($thirdToken)->postJson('/api/v1/couple/join', ['code' => $code])->assertUnprocessable();
@@ -549,6 +553,92 @@ class PairnestApiTest extends TestCase
         Sanctum::actingAs($alex);
         $this->deleteJson("/api/v1/transactions/{$topUp}")->assertNoContent();
         $this->getJson('/api/v1/wallets')->assertJsonPath('0.balance', 3000)->assertJsonPath('1.balance', 7000);
+    }
+
+    public function test_a_fee_on_a_move_is_spending_from_the_same_wallet(): void
+    {
+        [, $alex] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->travelTo(now()->setDate(2028, 3, 10));
+        $bdo = $this->postJson('/api/v1/wallets', ['name' => 'BDO', 'kind' => 'debit', 'provider' => 'bdo', 'balance' => 10000])->json('id');
+        $cash = $this->postJson('/api/v1/wallets', ['name' => 'Cash', 'kind' => 'cash', 'provider' => 'cash'])->json('id');
+
+        // An ATM withdrawal with an ₱18 fee.
+        $move = $this->postJson('/api/v1/moves', ['from_wallet_id' => $bdo, 'to_wallet_id' => $cash, 'amount' => 5000, 'fee' => 18])
+            ->assertCreated()
+            ->assertJsonPath('wallets.0.balance', 4982)
+            ->assertJsonPath('wallets.1.balance', 5000)
+            ->json('transaction.id');
+        $this->getJson('/api/v1/transactions')
+            ->assertJsonFragment(['type' => 'expense', 'amount' => 18, 'title' => 'Fee · BDO → Cash', 'move_id' => $move, 'wallet_id' => $bdo]);
+        $this->getJson('/api/v1/budgets/2028-03')->assertJsonPath('spent', 18);
+
+        // Undoing the move takes the fee with it.
+        $this->deleteJson("/api/v1/transactions/{$move}")->assertNoContent();
+        $this->getJson('/api/v1/budgets/2028-03')->assertJsonPath('spent', 0);
+        $this->getJson('/api/v1/wallets')->assertJsonPath('0.balance', 10000)->assertJsonPath('1.balance', 0);
+
+        // No fee, no expense.
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $bdo, 'to_wallet_id' => $cash, 'amount' => 100, 'fee' => 0])->assertCreated();
+        $this->getJson('/api/v1/budgets/2028-03')->assertJsonPath('spent', 0);
+        $this->postJson('/api/v1/moves', ['from_wallet_id' => $bdo, 'to_wallet_id' => $cash, 'amount' => 100, 'fee' => -1])
+            ->assertUnprocessable()->assertJsonValidationErrors('fee');
+    }
+
+    public function test_the_built_in_cash_wallet_stays(): void
+    {
+        [$couple, $alex] = $this->pair();
+        \App\Models\Wallet::ensureCash($couple, $alex);
+        \App\Models\Wallet::ensureCash($couple, $alex);
+        Sanctum::actingAs($alex);
+        $cash = $this->getJson('/api/v1/wallets')->assertJsonCount(1)->assertJsonPath('0.builtin', true)->json('0.id');
+
+        $this->patchJson("/api/v1/wallets/{$cash}", ['name' => 'Pocket', 'kind' => 'bank', 'provider' => 'bpi'])
+            ->assertOk()->assertJsonPath('name', 'Pocket')->assertJsonPath('kind', 'cash')->assertJsonPath('provider', 'cash');
+        $this->postJson("/api/v1/wallets/{$cash}/balance", ['balance' => 800])->assertOk()->assertJsonPath('balance', 800);
+        $this->deleteJson("/api/v1/wallets/{$cash}")->assertUnprocessable()->assertJsonValidationErrors('wallet');
+        $this->getJson('/api/v1/wallets')->assertJsonCount(1);
+    }
+
+    public function test_settling_up_can_move_money_between_wallets(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 2000])->json('id');
+        $ours = $this->postJson('/api/v1/wallets', ['name' => 'Our Maya', 'kind' => 'ewallet', 'provider' => 'maya', 'is_shared' => true])->json('id');
+        $this->postJson('/api/v1/transactions', [
+            'type' => 'expense', 'amount' => 830, 'category' => 'food', 'title' => 'Dinner', 'is_split' => true, 'occurred_on' => now()->toDateString(),
+        ]);
+        Sanctum::actingAs($sam);
+        $bpi = $this->postJson('/api/v1/wallets', ['name' => 'BPI', 'kind' => 'bank', 'provider' => 'bpi', 'balance' => 1000])->json('id');
+
+        // Sam pays Alex back from BPI into Alex's GCash.
+        $wrong = ['amount' => 415, 'from_user_id' => $sam->id];
+        $this->postJson('/api/v1/settlements', $wrong + ['from_wallet_id' => $gcash])
+            ->assertUnprocessable()->assertJsonPath('errors.from_wallet_id.0', 'Pick one of your own wallets.');
+        $this->postJson('/api/v1/settlements', $wrong + ['to_wallet_id' => $bpi])
+            ->assertUnprocessable()->assertJsonPath('errors.to_wallet_id.0', "Pick one of Alex's own wallets.");
+        $this->postJson('/api/v1/settlements', $wrong + ['to_wallet_id' => $ours])->assertUnprocessable();
+        $id = $this->postJson('/api/v1/settlements', $wrong + ['from_wallet_id' => $bpi, 'to_wallet_id' => $gcash])
+            ->assertCreated()
+            ->assertJsonPath('from_wallet.name', 'BPI')
+            ->assertJsonPath('to_wallet.name', 'GCash')
+            ->json('id');
+        $this->getJson('/api/v1/balance')
+            ->assertJsonPath('owes', null)
+            ->assertJsonPath('settlements.0.to_wallet.name', 'GCash');
+        $this->getJson('/api/v1/wallets')->assertJsonPath('2.balance', 585);
+
+        Sanctum::actingAs($alex);
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 2415);
+        // A wallet a settle-up landed in is archived, not deleted.
+        $this->deleteJson("/api/v1/wallets/{$gcash}")->assertNoContent();
+        $this->assertDatabaseHas('wallets', ['id' => $gcash]);
+
+        // Undoing puts BPI back.
+        $this->deleteJson("/api/v1/settlements/{$id}")->assertNoContent();
+        Sanctum::actingAs($sam);
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 1000);
     }
 
     public function test_spending_from_a_shared_wallet_is_not_owed_between_partners(): void

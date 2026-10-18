@@ -7,6 +7,7 @@ use App\Models\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -81,7 +82,11 @@ class TransactionController extends Controller
         if ($transaction->type === 'release') {
             throw ValidationException::withMessages(['type' => 'Restore the goal instead.']);
         }
-        $transaction->delete();
+        DB::transaction(function () use ($request, $transaction) {
+            // A move's fee goes with it.
+            $request->user()->couple->transactions()->where('move_id', $transaction->id)->delete();
+            $transaction->delete();
+        });
 
         return response()->json(null, 204);
     }

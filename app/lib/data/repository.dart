@@ -100,12 +100,14 @@ abstract class PairnestRepository {
   Future<Wallet> setWalletBalance(int id, double balance);
 
   /// Moves money between two of your (or shared) wallets: not spending.
-  /// Deleting the returned transaction undoes it.
+  /// A [fee] is logged as an expense from the same wallet. Deleting the
+  /// returned transaction undoes both.
   Future<({Txn transaction, List<Wallet> wallets})> moveMoney({
     required int fromWalletId,
     required int toWalletId,
     required double amount,
     String? note,
+    double? fee,
   });
 
   Future<List<Payday>> paydays();
@@ -122,7 +124,9 @@ abstract class PairnestRepository {
 
   /// Who owes whom between the two of you, as a running total.
   Future<SplitBalance> balance();
-  Future<Settlement> settleUp({required double amount, required int fromUserId});
+
+  /// Records a payback; the wallets (the payer's own, the receiver's own) are optional.
+  Future<Settlement> settleUp({required double amount, required int fromUserId, int? fromWalletId, int? toWalletId});
   Future<void> deleteSettlement(int id);
 
   Future<List<Plan>> plans();

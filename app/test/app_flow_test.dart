@@ -653,8 +653,10 @@ void main() {
     // Sam's food only.
     await tester.tap(find.byTooltip('Filters'));
     await _settle(tester);
-    await tester.tap(find.widgetWithText(FilterChip, 'Food & Dining'));
     await tester.tap(find.text('Sam').last);
+    await tester.scrollUntilVisible(find.widgetWithText(FilterChip, 'Food & Dining'), 100, scrollable: find.byType(Scrollable).last);
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(FilterChip, 'Food & Dining'));
     await tester.pump();
     await tester.tap(find.text('Show 1 result'));
     await _settle(tester);
@@ -675,6 +677,7 @@ void main() {
     await tester.tap(find.byTooltip('Filters'));
     await _settle(tester);
     await tester.tap(find.text('Reset'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilterChip, 'Income'));
     await tester.pump();
     await tester.tap(find.text('Show 1 result'));
@@ -684,6 +687,8 @@ void main() {
 
     // Nothing matches: income in the food category.
     await tester.tap(find.byTooltip('Filters'));
+    await _settle(tester);
+    await tester.scrollUntilVisible(find.widgetWithText(FilterChip, 'Food & Dining'), 100, scrollable: find.byType(Scrollable).last);
     await _settle(tester);
     await tester.tap(find.widgetWithText(FilterChip, 'Food & Dining'));
     await tester.pump();
@@ -947,7 +952,7 @@ void main() {
     await tester.tap(find.bySemanticsLabel('GCash, ₱4,200'));
     await _settle(tester);
     expect(find.text('Our Wallets'), findsOneWidget);
-    expect(find.text('₱10,200 across 3 wallets · ₱6,300 owed on cards', findRichText: true), findsOneWidget);
+    expect(find.text('₱11,700 across 4 wallets · ₱6,300 owed on cards', findRichText: true), findsOneWidget);
     // Opens on the card that was tapped: its month below.
     expect(find.text('Electricity Bill'), findsOneWidget);
     expect(find.text('Correct balance'), findsOneWidget);
@@ -955,7 +960,8 @@ void main() {
     await tester.tap(find.text("Sam's"));
     await _settle(tester);
     // Sam keeps the BDO balance private.
-    expect(find.text('Balance private'), findsOneWidget);
+    // (Sam's Cash, the next card along, is private too.)
+    expect(find.text('Balance private'), findsWidgets);
     expect(find.textContaining('Sam keeps this wallet'), findsOneWidget);
     expect(find.text('Correct balance'), findsNothing);
     expect(container.read(routerProvider).state.uri.path, '/home/wallets');
@@ -1160,8 +1166,9 @@ void main() {
     final container = await _signedIn(tester);
     container.read(routerProvider).go('/home/wallets?id=2');
     await _settle(tester);
-    await tester.ensureVisible(find.text('See all'));
-    await tester.tap(find.text('See all'));
+    await tester.ensureVisible(find.text('See all').last);
+    await _settle(tester);
+    await tester.tap(find.text('See all').last);
     await _settle(tester);
     expect(container.read(routerProvider).state.uri.path, '/activity');
     expect(find.widgetWithText(InputChip, 'GCash'), findsOneWidget);
@@ -1219,6 +1226,92 @@ void main() {
     expect(find.text('₱2,500'), findsWidgets);
     expect(find.text('Set your shared budget ›'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('^In shared wallets, ')), findsNothing, reason: 'no corner when it is the main figure');
+  });
+
+  testWidgets('withdrawing cash moves it into the Cash wallet, and a fee counts as spending', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    container.read(routerProvider).go('/home/wallets?id=2');
+    await _settle(tester);
+    await tester.ensureVisible(find.text('Withdraw cash'));
+    await tester.tap(find.text('Withdraw cash'));
+    await _settle(tester);
+    expect(find.text('Withdraw cash'), findsWidgets, reason: 'the sheet title');
+    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '1000');
+    await tester.enterText(find.widgetWithText(TextField, 'Fee (optional)'), '18');
+    await _settle(tester);
+    await tester.tap(find.text('Move ₱1,000 + ₱18 fee'));
+    await _settle(tester);
+    expect(find.text('Moved ₱1,000 to Cash'), findsOneWidget);
+    var wallets = await resolve(repo.wallets());
+    expect(wallets.firstWhere((w) => w.id == 2).balance, 4200 - 1018);
+    expect(wallets.firstWhere((w) => w.id == 5).balance, 2500);
+
+    // Undo takes the fee back too.
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    wallets = await resolve(repo.wallets());
+    expect(wallets.firstWhere((w) => w.id == 2).balance, 4200);
+    expect((await resolve(repo.dashboard())).budget.spent, 17780);
+
+    // The fee is spending; the move isn't.
+    await resolve(repo.moveMoney(fromWalletId: 2, toWalletId: 5, amount: 1000, fee: 18));
+    expect((await resolve(repo.dashboard())).budget.spent, 17780 + 18);
+  });
+
+  testWidgets('the built-in Cash wallet can be renamed but not removed', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    container.read(routerProvider).go('/home/wallets?id=5');
+    await _settle(tester);
+    expect(find.text('Correct balance'), findsOneWidget);
+    expect(find.text('Remove'), findsNothing);
+    expect(find.text('Withdraw cash'), findsNothing);
+    final refused = repo.archiveWallet(5).then((_) => false, onError: (Object _) => true);
+    await _settle(tester);
+    expect(await refused, isTrue);
+
+    await tester.ensureVisible(find.text('Edit'));
+    await tester.tap(find.text('Edit'));
+    await _settle(tester);
+    expect(find.textContaining('Your Cash wallet is built in'), findsOneWidget);
+    expect(find.text('Type'), findsNothing);
+    expect(find.text('GCash'), findsNothing, reason: 'no brand picker');
+  });
+
+  testWidgets('settling up can say which wallets the money left and landed in', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    Future<T> resolve<T>(Future<T> f) async {
+      await _settle(tester);
+      return f;
+    }
+
+    container.read(routerProvider).go('/home/settle');
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Settle up'));
+    await _settle(tester);
+    // Your side starts on your Cash; Sam's isn't tracked unless picked.
+    expect(find.text('Received in your wallet'), findsOneWidget);
+    expect(find.text('Cash'), findsOneWidget);
+    await tester.tap(find.text('Not tracked'));
+    await _settle(tester);
+    await tester.tap(find.text('BDO Debit').last);
+    await _settle(tester);
+    await tester.tap(find.text('Record ₱415'));
+    await _settle(tester);
+    expect(find.text('BDO Debit → Cash · ${shortDate(DateTime.now())}'), findsOneWidget);
+    expect((await resolve(repo.wallets())).firstWhere((w) => w.id == 5).balance, 1500 + 415);
+
+    await tester.tap(find.text('Undo'));
+    await _settle(tester);
+    expect((await resolve(repo.wallets())).firstWhere((w) => w.id == 5).balance, 1500);
+    expect((await resolve(repo.balance())).owes!.amount, 415);
   });
 
   testWidgets('form sheets can be closed with a button', (tester) async {
