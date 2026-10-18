@@ -116,6 +116,8 @@ class Txn {
     required this.isSplit,
     required this.occurredOn,
     this.goalId,
+    this.walletId,
+    this.toWalletId,
   });
 
   factory Txn.fromJson(Map<String, dynamic> j) => Txn(
@@ -130,6 +132,8 @@ class Txn {
     isSplit: j['is_split'] == true || j['is_split'] == 1,
     occurredOn: DateTime.parse(j['occurred_on'] as String),
     goalId: j['goal_id'] as int?,
+    walletId: j['wallet_id'] as int?,
+    toWalletId: j['to_wallet_id'] as int?,
   );
 
   final int id;
@@ -146,6 +150,12 @@ class Txn {
   /// The goal a transfer moved money into.
   final int? goalId;
 
+  /// The wallet money left (expenses, transfers, moves) or landed in (income, releases).
+  final int? walletId;
+
+  /// Where a move's money landed.
+  final int? toWalletId;
+
   bool get isExpense => type == 'expense';
   bool get isIncome => type == 'income';
 
@@ -154,6 +164,9 @@ class Txn {
 
   /// A cancelled goal's savings given back.
   bool get isRelease => type == 'release';
+
+  /// Money shifted between two wallets: neither spent nor earned.
+  bool get isMove => type == 'move';
 }
 
 class TxnDraft {
@@ -166,6 +179,7 @@ class TxnDraft {
     required this.isSplit,
     required this.occurredOn,
     this.paidBy,
+    this.walletId,
   });
 
   /// A copy of [t]'s fields, used to edit it or to restore it after a delete.
@@ -178,6 +192,7 @@ class TxnDraft {
     isSplit: t.isSplit,
     occurredOn: t.occurredOn,
     paidBy: t.userId,
+    walletId: t.walletId,
   );
 
   final String type;
@@ -190,6 +205,95 @@ class TxnDraft {
 
   /// Member who paid; null means whoever logs it.
   final int? paidBy;
+
+  /// Paid from or received into; null for no wallet.
+  final int? walletId;
+}
+
+/// A GCash, Maya, bank card, credit card or cash: personal, or shared ("Ours").
+class Wallet {
+  const Wallet({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.provider = 'other',
+    this.ownerId,
+    this.ownerName = '',
+    this.last4,
+    this.balance,
+    this.showBalanceToPartner = false,
+  });
+
+  factory Wallet.fromJson(Map<String, dynamic> j) => Wallet(
+    id: j['id'] as int,
+    name: j['name'] as String,
+    kind: j['kind'] as String,
+    provider: (j['provider'] ?? 'other') as String,
+    ownerId: j['user_id'] as int?,
+    ownerName: ((j['user'] as Map?)?['name'] ?? '') as String,
+    last4: j['last4'] as String?,
+    balance: j['balance'] == null ? null : _num(j['balance']),
+    showBalanceToPartner: j['show_balance_to_partner'] == true || j['show_balance_to_partner'] == 1,
+  );
+
+  final int id;
+  final String name;
+
+  /// cash, ewallet, debit, credit or bank.
+  final String kind;
+
+  /// Which bank or e-wallet, for its colours (see wallet_brands.dart).
+  final String provider;
+
+  /// Null for a shared wallet.
+  final int? ownerId;
+  final String ownerName;
+  final String? last4;
+
+  /// Null when it's your partner's and they keep it private. Below zero on a
+  /// credit card means owed.
+  final double? balance;
+  final bool showBalanceToPartner;
+
+  bool get isShared => ownerId == null;
+  bool get isCredit => kind == 'credit';
+
+  /// You can spend from, move from and edit shared wallets and your own.
+  bool usableBy(int userId) => isShared || ownerId == userId;
+
+  Wallet copyWith({double? balance}) => Wallet(
+    id: id,
+    name: name,
+    kind: kind,
+    provider: provider,
+    ownerId: ownerId,
+    ownerName: ownerName,
+    last4: last4,
+    balance: balance ?? this.balance,
+    showBalanceToPartner: showBalanceToPartner,
+  );
+}
+
+class WalletDraft {
+  const WalletDraft({
+    required this.name,
+    required this.kind,
+    required this.provider,
+    this.last4,
+    this.balance,
+    this.isShared = false,
+    this.showBalanceToPartner = false,
+  });
+
+  final String name;
+  final String kind;
+  final String provider;
+  final String? last4;
+
+  /// The starting balance when adding; ignored on edit (correct it instead).
+  final double? balance;
+  final bool isShared;
+  final bool showBalanceToPartner;
 }
 
 class BudgetLine {
@@ -485,6 +589,7 @@ class Dashboard {
     this.upcomingBills = const [],
     this.savedThisMonth = 0,
     this.paydays = const [],
+    this.wallets = const [],
   });
 
   factory Dashboard.fromJson(Map<String, dynamic> j) {
@@ -498,6 +603,7 @@ class Dashboard {
       upcomingBills: [for (final b in (j['upcoming_bills'] ?? const []) as List) Bill.fromJson(b as Map<String, dynamic>)],
       savedThisMonth: _num(j['saved_this_month']),
       paydays: [for (final d in (j['paydays'] ?? const []) as List) Payday.fromJson(d as Map<String, dynamic>)],
+      wallets: [for (final w in (j['wallets'] ?? const []) as List) Wallet.fromJson(w as Map<String, dynamic>)],
     );
   }
 
@@ -516,6 +622,9 @@ class Dashboard {
 
   /// Both partners' pay schedules, soonest first.
   final List<Payday> paydays;
+
+  /// Shared wallets first, then each partner's.
+  final List<Wallet> wallets;
 
   /// Spending change vs last month as a fraction (0.12 = 12% more), or null
   /// when there's nothing to compare against.

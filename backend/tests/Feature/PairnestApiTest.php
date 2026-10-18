@@ -440,6 +440,91 @@ class PairnestApiTest extends TestCase
         $this->deleteJson("/api/v1/paydays/{$id}")->assertNoContent();
     }
 
+    public function test_wallets_keep_a_running_balance(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 5000])
+            ->assertCreated()
+            ->assertJsonPath('balance', 5000)
+            ->assertJsonPath('is_shared', false)
+            ->assertJsonPath('user.name', 'Alex')
+            ->assertJsonMissingPath('opening_balance')
+            ->json('id');
+        $card = $this->postJson('/api/v1/wallets', ['name' => 'BPI Credit', 'kind' => 'credit', 'provider' => 'bpi', 'last4' => '4821'])
+            ->assertJsonPath('last4', '4821')->json('id');
+
+        $txn = fn (array $extra) => $this->postJson('/api/v1/transactions', $extra + [
+            'type' => 'expense', 'amount' => 100, 'category' => 'food', 'title' => 'T', 'occurred_on' => '2028-03-05',
+        ]);
+        $txn(['amount' => 1200, 'wallet_id' => $gcash])->assertCreated()->assertJsonPath('payment_method', 'gcash');
+        $txn(['type' => 'income', 'category' => 'income', 'amount' => 3000, 'wallet_id' => $gcash])->assertCreated();
+        $txn(['amount' => 3200, 'wallet_id' => $card])->assertJsonPath('payment_method', 'card');
+        $txn(['amount' => 50])->assertCreated();
+
+        $this->getJson('/api/v1/wallets')
+            ->assertJsonCount(2)
+            ->assertJsonPath('0.balance', 6800)
+            // A credit card goes below zero: what's owed.
+            ->assertJsonPath('1.balance', -3200);
+
+        // Correcting a balance after checking the bank app.
+        $this->postJson("/api/v1/wallets/{$gcash}/balance", ['balance' => 6500])->assertOk()->assertJsonPath('balance', 6500);
+        $txn(['amount' => 500, 'wallet_id' => $gcash]);
+        $this->getJson('/api/v1/dashboard')->assertJsonPath('wallets.0.balance', 6000);
+
+        // A shared wallet comes first and is open to both.
+        $ours = $this->postJson('/api/v1/wallets', ['name' => 'Our Maya', 'kind' => 'ewallet', 'provider' => 'maya', 'is_shared' => true, 'balance' => 2000])
+            ->assertJsonPath('is_shared', true)->assertJsonPath('user', null)->json('id');
+        $this->getJson('/api/v1/wallets')->assertJsonPath('0.name', 'Our Maya');
+
+        // Sam sees Alex's wallets by name, but not their balances.
+        Sanctum::actingAs($sam);
+        $this->getJson('/api/v1/wallets')
+            ->assertJsonCount(3)
+            ->assertJsonPath('0.balance', 2000)
+            ->assertJsonPath('1.name', 'GCash')
+            ->assertJsonPath('1.balance', null);
+        $txn(['amount' => 100, 'wallet_id' => $gcash])->assertUnprocessable()->assertJsonValidationErrors('wallet_id');
+        $txn(['amount' => 400, 'wallet_id' => $ours])->assertCreated();
+        // Logging for Alex may use Alex's wallet.
+        $txn(['amount' => 100, 'wallet_id' => $gcash, 'user_id' => $alex->id])->assertCreated();
+        $this->patchJson("/api/v1/wallets/{$gcash}", ['name' => 'Mine now'])
+            ->assertForbidden()->assertJsonPath('message', "Only Alex can change Alex's wallet.");
+        $this->postJson("/api/v1/wallets/{$ours}/balance", ['balance' => 1500])->assertOk();
+
+        Sanctum::actingAs($alex);
+        $this->patchJson("/api/v1/wallets/{$gcash}", ['show_balance_to_partner' => true, 'name' => 'GCash'])->assertOk();
+        Sanctum::actingAs($sam);
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 5900)->assertJsonPath('0.balance', 1500);
+    }
+
+    public function test_a_used_wallet_is_archived_not_deleted(): void
+    {
+        [, $alex] = $this->pair();
+        [, $other] = $this->pair();
+        Sanctum::actingAs($alex);
+        $unused = $this->postJson('/api/v1/wallets', ['name' => 'Cash', 'kind' => 'cash', 'provider' => 'cash'])->json('id');
+        $used = $this->postJson('/api/v1/wallets', ['name' => 'BDO', 'kind' => 'debit', 'provider' => 'bdo'])->json('id');
+        $this->postJson('/api/v1/transactions', [
+            'type' => 'expense', 'amount' => 100, 'category' => 'food', 'title' => 'Lunch', 'occurred_on' => '2028-03-05', 'wallet_id' => $used,
+        ])->assertCreated();
+        $this->postJson('/api/v1/wallets', ['name' => 'X', 'kind' => 'debit', 'provider' => 'nope'])->assertUnprocessable();
+
+        $this->deleteJson("/api/v1/wallets/{$unused}")->assertNoContent();
+        $this->deleteJson("/api/v1/wallets/{$used}")->assertNoContent();
+        $this->getJson('/api/v1/wallets')->assertJsonCount(0);
+        // The transaction keeps its wallet; archived wallets can't take new ones.
+        $this->getJson('/api/v1/transactions')->assertJsonPath('data.0.wallet_id', $used);
+        $this->postJson('/api/v1/transactions', [
+            'type' => 'expense', 'amount' => 1, 'category' => 'food', 'title' => 'X', 'occurred_on' => '2028-03-05', 'wallet_id' => $used,
+        ])->assertUnprocessable();
+
+        Sanctum::actingAs($other);
+        $this->getJson('/api/v1/wallets')->assertJsonCount(0);
+    }
+
     public function test_goal_contributions_update_progress(): void
     {
         [, $alex, $sam] = $this->pair();

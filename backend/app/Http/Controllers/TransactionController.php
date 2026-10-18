@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
+use App\Models\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,9 +51,8 @@ class TransactionController extends Controller
     public function store(Request $request): JsonResponse
     {
         // user_id is who paid: the sender unless they logged it for their partner.
-        $transaction = $request->user()->couple->transactions()->create(
-            $this->validated($request) + ['user_id' => $request->user()->id]
-        );
+        $data = $this->validated($request) + ['user_id' => $request->user()->id];
+        $transaction = $request->user()->couple->transactions()->create($this->withWallet($request, $data, $data['user_id']));
 
         return response()->json($transaction->load('user:id,name'), 201);
     }
@@ -66,7 +66,11 @@ class TransactionController extends Controller
         if ($transaction->type === 'release') {
             throw ValidationException::withMessages(['type' => 'Restore the goal instead.']);
         }
-        $transaction->update($this->validated($request, partial: true));
+        if ($transaction->type === 'move') {
+            throw ValidationException::withMessages(['type' => "Moves can't be edited. Delete it and move the money again."]);
+        }
+        $data = $this->validated($request, partial: true);
+        $transaction->update($this->withWallet($request, $data, $data['user_id'] ?? $transaction->user_id));
 
         return response()->json($transaction->load('user:id,name'));
     }
@@ -82,6 +86,20 @@ class TransactionController extends Controller
         return response()->json(null, 204);
     }
 
+    /**
+     * Checks the wallet belongs to whoever paid (or is shared) and sets the
+     * payment_method tag from it. A null wallet_id clears it.
+     */
+    private function withWallet(Request $request, array $data, int $payerId): array
+    {
+        if (! empty($data['wallet_id'])) {
+            $wallet = Wallet::usable($request->user()->couple, $data['wallet_id'], $payerId);
+            $data['payment_method'] = $wallet->paymentMethod();
+        }
+
+        return $data;
+    }
+
     private function validated(Request $request, bool $partial = false): array
     {
         $req = $partial ? 'sometimes' : 'required';
@@ -93,6 +111,7 @@ class TransactionController extends Controller
             'title' => [$req, 'string', 'max:120'],
             'payment_method' => ['sometimes', Rule::in(Transaction::PAYMENT_METHODS)],
             'is_split' => ['sometimes', 'boolean'],
+            'wallet_id' => ['sometimes', 'nullable', 'integer'],
             'occurred_on' => [$req, 'date_format:Y-m-d'],
             'user_id' => ['sometimes', 'integer', Rule::in($request->user()->couple->members()->pluck('id'))],
         ]);

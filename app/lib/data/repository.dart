@@ -89,6 +89,16 @@ abstract class PairnestRepository {
   /// Undoes [payBill]: deletes its expense and puts the due date back.
   Future<Bill> unpayBill(int id, {required int transactionId, required DateTime previousDue});
 
+  Future<List<Wallet>> wallets();
+  Future<Wallet> addWallet(WalletDraft draft);
+  Future<Wallet> updateWallet(int id, WalletDraft draft);
+
+  /// Deletes an unused wallet, or archives one that has transactions.
+  Future<void> archiveWallet(int id);
+
+  /// Sets what the wallet holds right now.
+  Future<Wallet> setWalletBalance(int id, double balance);
+
   Future<List<Payday>> paydays();
   Future<Payday> addPayday(PaydayDraft draft);
   Future<Payday> updatePayday(int id, PaydayDraft draft);

@@ -289,6 +289,8 @@ final billsProvider = FutureProvider<List<Bill>>((ref) => ref.watch(repositoryPr
 
 final paydaysProvider = FutureProvider<List<Payday>>((ref) => ref.watch(repositoryProvider).paydays());
 
+final walletsProvider = FutureProvider<List<Wallet>>((ref) => ref.watch(repositoryProvider).wallets());
+
 /// My paydays that have come and aren't logged yet. A partner's are never nagged.
 final duePaydaysProvider = Provider<List<Payday>>((ref) {
   final paydays = ref.watch(dashboardProvider).value?.paydays ?? const <Payday>[];
@@ -320,6 +322,7 @@ final _moneyProviders = <ProviderOrFamily>[
   budgetProvider,
   billsProvider,
   paydaysProvider,
+  walletsProvider,
   balanceProvider,
   goalsProvider,
 ];

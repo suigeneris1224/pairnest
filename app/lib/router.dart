@@ -11,6 +11,7 @@ import 'features/budgets/budgets_screen.dart';
 import 'features/expense/add_transaction_screen.dart';
 import 'features/recap/recap_screen.dart';
 import 'features/settle/settle_screen.dart';
+import 'features/wallets/wallets_screen.dart';
 import 'features/feelings/check_in_screen.dart';
 import 'features/feelings/feelings_screen.dart';
 import 'features/goals/goals_screen.dart';
@@ -96,6 +97,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(path: 'budgets', pageBuilder: (_, state) => _page(state, const BudgetsScreen())),
                   GoRoute(path: 'settle', pageBuilder: (_, state) => _page(state, const SettleScreen())),
+                  GoRoute(
+                    path: 'wallets',
+                    pageBuilder: (_, state) => _page(state, WalletsScreen(initialId: int.tryParse(state.uri.queryParameters['id'] ?? ''))),
+                  ),
                   GoRoute(
                     path: 'recap',
                     pageBuilder: (_, state) {

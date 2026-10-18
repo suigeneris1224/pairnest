@@ -173,6 +173,39 @@ void main() {
     await alex.deletePayday(weekly.id);
     expect((await sam.paydays()).map((d) => d.title), ['Salary']);
 
+    // Wallets: balances follow what's logged; a partner's stay private.
+    final gcash = await alex.addWallet(const WalletDraft(name: 'GCash', kind: 'ewallet', provider: 'gcash', balance: 5000));
+    expect(gcash.balance, 5000);
+    final ours = await alex.addWallet(const WalletDraft(name: 'Our Maya', kind: 'ewallet', provider: 'maya', isShared: true));
+    expect(ours.isShared, isTrue);
+    final card = await alex.addWallet(const WalletDraft(name: 'BPI', kind: 'credit', provider: 'bpi', last4: '4821'));
+    final spent = await alex.addTransaction(
+      TxnDraft(
+        type: 'expense',
+        amount: 1200,
+        category: 'food',
+        title: 'Lunch',
+        paymentMethod: 'cash',
+        isSplit: false,
+        occurredOn: month,
+        walletId: card.id,
+      ),
+    );
+    expect(spent.walletId, card.id);
+    expect(spent.paymentMethod, 'card');
+    final mine = await alex.wallets();
+    expect(mine.first.name, 'Our Maya');
+    expect(mine.firstWhere((w) => w.id == card.id).balance, -1200);
+    expect((await alex.setWalletBalance(gcash.id, 4100)).balance, 4100);
+    final seenBySam = await sam.wallets();
+    expect(seenBySam.firstWhere((w) => w.id == gcash.id).balance, isNull);
+    expect(seenBySam.firstWhere((w) => w.id == ours.id).balance, 0);
+    expect((await sam.dashboard()).wallets, hasLength(3));
+    await alex.updateWallet(gcash.id, const WalletDraft(name: 'GCash', kind: 'ewallet', provider: 'gcash', showBalanceToPartner: true));
+    expect((await sam.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
+    await alex.archiveWallet(card.id);
+    expect((await alex.wallets()).map((w) => w.id), isNot(contains(card.id)));
+
     // Activity loads the whole month (no 30-item cut-off) and custom ranges.
     final day = DateTime(month.year, month.month, 1);
     for (var i = 0; i < 31; i++) {

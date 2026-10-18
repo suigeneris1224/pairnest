@@ -6,6 +6,7 @@ import '../../core/format.dart';
 import '../../core/mascot/mascot.dart';
 import '../../core/motion/motion.dart';
 import '../../core/theme/palettes.dart';
+import '../../core/widgets/bank_card.dart';
 import '../../core/widgets/categories.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/member_avatar.dart';
@@ -352,6 +353,96 @@ class _BillReminders extends ConsumerWidget {
   }
 }
 
+/// The couple's wallets as small brand cards; a gentle prompt when there are none.
+class _WalletsRow extends StatelessWidget {
+  const _WalletsRow(this.wallets);
+
+  final List<Wallet> wallets;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pn;
+    if (wallets.isEmpty) {
+      return Material(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => context.go('/home/wallets'),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: p.border),
+            ),
+            child: Row(
+              children: [
+                PastelIcon(Icons.account_balance_wallet_outlined, tone: Pastel.sky, size: 36),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Add your wallets',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: p.heading),
+                      ),
+                      Text('GCash, Maya, bank cards…', style: TextStyle(color: p.muted, fontSize: 12.5)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: p.muted),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Wallets', style: Theme.of(context).textTheme.titleMedium)),
+            TextButton(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: p.muted),
+              onPressed: () => context.go('/home/wallets'),
+              child: const Text('See all'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: MiniWalletCard.size.height,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            itemCount: wallets.length + 1,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (_, i) => i < wallets.length
+                ? MiniWalletCard(wallets[i], onTap: () => context.go('/home/wallets?id=${wallets[i].id}'))
+                : Tooltip(
+                    message: 'Add wallet',
+                    child: InkWell(
+                      onTap: () => context.go('/home/wallets'),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: 64,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: p.border, width: 1.5),
+                        ),
+                        child: Icon(Icons.add_rounded, color: p.muted),
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// "Payday! Log your Salary" while one of my paydays is waiting to be logged.
 class _PaydayReminder extends ConsumerWidget {
   const _PaydayReminder();
@@ -549,6 +640,8 @@ class _DashboardBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 14),
+        FadeSlideIn(index: 2, child: _WalletsRow(data.wallets)),
+        const SizedBox(height: 14),
         FadeSlideIn(
           index: 2,
           child: SectionCard(
@@ -589,6 +682,7 @@ class _DashboardBody extends ConsumerWidget {
               (Icons.event_rounded, 'Date & Life Planner', '/us/planner', Pastel.peach),
               (Icons.pie_chart_outline_rounded, 'Budgets, Bills & Paydays', '/home/budgets', Pastel.sage),
               (Icons.handshake_outlined, 'Settle Up', '/home/settle', Pastel.peach),
+              (Icons.account_balance_wallet_outlined, 'Wallets', '/home/wallets', Pastel.sky),
               (Icons.auto_awesome_outlined, 'Monthly recap', '/home/recap', Pastel.lavender),
               (Icons.palette_outlined, 'Personalize', '/us/personalize', Pastel.sky),
             ])

@@ -32,6 +32,8 @@ class MockRepository implements PairnestRepository {
   final _plans = <Plan>[];
   final _bills = <Bill>[];
   final _paydays = <Payday>[];
+  final _wallets = <Wallet>[];
+  final _openings = <int, double>{};
   final _settlements = <Settlement>[];
   final _answers = <int, List<TalkAnswer>>{};
   final _prompts = const [
@@ -104,7 +106,7 @@ class MockRepository implements PairnestRepository {
 
     _budgets[monthKey(m)] = (32000, {'food': 8000, 'bills': 6000, 'transport': 4000, 'shopping': 4000, 'entertainment': 3000});
 
-    Txn t(int id, Member who, String type, double amount, String cat, String title, String pay, bool split, int d) => Txn(
+    Txn t(int id, Member who, String type, double amount, String cat, String title, String pay, bool split, int d, [int? wallet]) => Txn(
       id: id,
       userId: who.id,
       userName: who.name,
@@ -115,15 +117,24 @@ class MockRepository implements PairnestRepository {
       paymentMethod: pay,
       isSplit: split,
       occurredOn: day(d),
+      walletId: wallet,
     );
+    // Our Maya (shared), Alex's GCash and BPI credit card, Sam's BDO debit (balance private).
+    _wallets.addAll([
+      const Wallet(id: 1, name: 'Our Maya', kind: 'ewallet', provider: 'maya'),
+      Wallet(id: 2, name: 'GCash', kind: 'ewallet', provider: 'gcash', ownerId: _user.id, ownerName: _user.name),
+      Wallet(id: 3, name: 'BPI Credit', kind: 'credit', provider: 'bpi', ownerId: _user.id, ownerName: _user.name, last4: '4821'),
+      Wallet(id: 4, name: 'BDO Debit', kind: 'debit', provider: 'bdo', ownerId: _sam.id, ownerName: _sam.name, last4: '1029'),
+    ]);
+    _openings.addAll({1: 9600, 2: 6630, 3: 0, 4: 19800});
     _txns.addAll([
       t(1, _user, 'income', 45000, 'income', 'Salary', 'bank', false, 1),
-      t(2, _user, 'expense', 3800, 'food', 'Weekly groceries', 'card', true, 3),
-      t(3, _sam, 'expense', 3600, 'bills', 'Internet & water', 'gcash', true, 5),
+      t(2, _user, 'expense', 3800, 'food', 'Weekly groceries', 'card', true, 3, 3),
+      t(3, _sam, 'expense', 3600, 'bills', 'Internet & water', 'maya', true, 5, 1),
       t(4, _sam, 'expense', 2400, 'transport', 'Fuel', 'cash', false, 6),
-      t(5, _user, 'expense', 2500, 'shopping', 'Home essentials', 'card', false, 7),
-      t(6, _sam, 'expense', 1800, 'entertainment', 'Date Night', 'card', true, 8),
-      t(7, _user, 'expense', 2430, 'bills', 'Electricity Bill', 'gcash', true, 9),
+      t(5, _user, 'expense', 2500, 'shopping', 'Home essentials', 'card', false, 7, 3),
+      t(6, _sam, 'expense', 1800, 'entertainment', 'Date Night', 'card', true, 8, 4),
+      t(7, _user, 'expense', 2430, 'bills', 'Electricity Bill', 'gcash', true, 9, 2),
       t(8, _sam, 'expense', 1250, 'food', 'Groceries', 'cash', false, 10),
     ]);
 
@@ -356,6 +367,7 @@ class MockRepository implements PairnestRepository {
       ),
       upcomingBills: bills.where((b) => !b.nextDueOn.isAfter(soon)).take(5).toList(),
       paydays: await paydays(),
+      wallets: await wallets(),
     );
   }
 
@@ -489,6 +501,96 @@ class MockRepository implements PairnestRepository {
     isSplit: b.isSplit,
     userName: b.userName,
   );
+
+  /// Money in minus money out per wallet, like the server's Wallet::flows.
+  Map<int, double> _flows() {
+    final flows = <int, double>{};
+    for (final t in _txns) {
+      if (t.walletId != null) {
+        flows[t.walletId!] = (flows[t.walletId!] ?? 0) + (t.isIncome || t.isRelease ? t.amount : -t.amount);
+      }
+      if (t.isMove && t.toWalletId != null) flows[t.toWalletId!] = (flows[t.toWalletId!] ?? 0) + t.amount;
+    }
+    return flows;
+  }
+
+  Wallet _present(Wallet w, [Map<int, double>? flows]) {
+    final visible = w.usableBy(_user.id) || w.showBalanceToPartner;
+    if (!visible) return w;
+    final balance = (_openings[w.id] ?? 0) + ((flows ?? _flows())[w.id] ?? 0);
+    return w.copyWith(balance: (balance * 100).roundToDouble() / 100);
+  }
+
+  Wallet _rawWallet(int id) => _wallets.firstWhere((w) => w.id == id, orElse: () => throw Exception('That wallet is gone.'));
+
+  /// A shared wallet or one of [userId]'s own, as the server checks it.
+  int? _checkWallet(int? id, int userId) {
+    if (id == null) return null;
+    final w = _wallets.where((w) => w.id == id).firstOrNull;
+    if (w == null || !w.usableBy(userId)) throw Exception('Pick one of your wallets or a shared one.');
+    return id;
+  }
+
+  String _walletPaymentMethod(int id) {
+    final w = _rawWallet(id);
+    if (w.provider == 'gcash' || w.provider == 'maya') return w.provider;
+    return switch (w.kind) {
+      'cash' => 'cash',
+      'debit' || 'credit' => 'card',
+      _ => 'bank',
+    };
+  }
+
+  int _myWalletIndex(int id) {
+    final i = _wallets.indexWhere((w) => w.id == id);
+    if (i < 0) throw Exception('That wallet is gone.');
+    final w = _wallets[i];
+    if (!w.usableBy(_user.id)) throw Exception("Only ${w.ownerName} can change ${w.ownerName}'s wallet.");
+    return i;
+  }
+
+  Wallet _walletFrom(int id, WalletDraft d, {required int? ownerId, required String ownerName}) => Wallet(
+    id: id,
+    name: d.name,
+    kind: d.kind,
+    provider: d.provider,
+    ownerId: ownerId,
+    ownerName: ownerName,
+    last4: d.last4,
+    showBalanceToPartner: d.showBalanceToPartner,
+  );
+
+  @override
+  Future<List<Wallet>> wallets() => _delay(() {
+    final flows = _flows();
+    final sorted = [..._wallets]..sort((a, b) => a.isShared == b.isShared ? a.id.compareTo(b.id) : (a.isShared ? -1 : 1));
+    return [for (final w in sorted) _present(w, flows)];
+  });
+
+  @override
+  Future<Wallet> addWallet(WalletDraft d) => _delay(() {
+    final w = _walletFrom(_nextId++, d, ownerId: d.isShared ? null : _user.id, ownerName: d.isShared ? '' : _user.name);
+    _wallets.add(w);
+    _openings[w.id] = d.balance ?? 0;
+    return _present(w);
+  });
+
+  @override
+  Future<Wallet> updateWallet(int id, WalletDraft d) => _delay(() {
+    final i = _myWalletIndex(id);
+    final old = _wallets[i];
+    return _present(_wallets[i] = _walletFrom(id, d, ownerId: old.ownerId, ownerName: old.ownerName));
+  });
+
+  @override
+  Future<void> archiveWallet(int id) => _delay(() => _wallets.removeAt(_myWalletIndex(id)));
+
+  @override
+  Future<Wallet> setWalletBalance(int id, double balance) => _delay(() {
+    final w = _wallets[_myWalletIndex(id)];
+    _openings[id] = balance - (_flows()[id] ?? 0);
+    return _present(w);
+  });
 
   @override
   Future<List<Payday>> paydays() => _delay(() => [..._paydays]..sort((a, b) => a.nextOn.compareTo(b.nextOn)));
@@ -641,9 +743,10 @@ class MockRepository implements PairnestRepository {
       amount: d.amount,
       category: d.category,
       title: d.title,
-      paymentMethod: d.paymentMethod,
+      paymentMethod: d.walletId == null ? d.paymentMethod : _walletPaymentMethod(d.walletId!),
       isSplit: d.isSplit,
       occurredOn: d.occurredOn,
+      walletId: _checkWallet(d.walletId, payer.id),
     );
     _txns.add(t);
     return t;
@@ -663,9 +766,11 @@ class MockRepository implements PairnestRepository {
       amount: d.amount,
       category: d.category,
       title: d.title,
-      paymentMethod: d.paymentMethod,
+      paymentMethod: d.walletId == null ? d.paymentMethod : _walletPaymentMethod(d.walletId!),
       isSplit: d.isSplit,
       occurredOn: d.occurredOn,
+      goalId: old.goalId,
+      walletId: _checkWallet(d.walletId, payer.id),
     );
   });
 

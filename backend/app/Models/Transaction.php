@@ -11,13 +11,13 @@ class Transaction extends Model
 
     public const PAYMENT_METHODS = ['cash', 'card', 'gcash', 'maya', 'bank'];
 
-    /** A release gives a cancelled goal's savings back. */
-    public const TYPES = ['expense', 'income', 'transfer', 'release'];
+    /** A release gives a cancelled goal's savings back; a move shifts money between two wallets. */
+    public const TYPES = ['expense', 'income', 'transfer', 'release', 'move'];
 
     /** Set by the server on transfers into goals; not a category people pick. */
     public const TRANSFER_CATEGORY = 'savings';
 
-    protected $fillable = ['user_id', 'goal_id', 'type', 'amount', 'category', 'title', 'payment_method', 'is_split', 'occurred_on'];
+    protected $fillable = ['user_id', 'goal_id', 'wallet_id', 'to_wallet_id', 'type', 'amount', 'category', 'title', 'payment_method', 'is_split', 'occurred_on'];
 
     protected function casts(): array
     {

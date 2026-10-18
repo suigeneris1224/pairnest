@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\BillController;
 use App\Http\Controllers\PaydayController;
+use App\Http\Controllers\WalletController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CoupleController;
 use App\Http\Controllers\DashboardController;
@@ -59,6 +60,8 @@ Route::prefix('v1')->group(function () {
             Route::post('bills/{bill}/pay', [BillController::class, 'pay']);
             Route::post('bills/{bill}/unpay', [BillController::class, 'unpay']);
             Route::apiResource('paydays', PaydayController::class)->except('show');
+            Route::apiResource('wallets', WalletController::class)->except('show');
+            Route::post('wallets/{wallet}/balance', [WalletController::class, 'balance']);
             Route::post('paydays/{payday}/receive', [PaydayController::class, 'receive']);
             Route::post('paydays/{payday}/unreceive', [PaydayController::class, 'unreceive']);
             Route::get('balance', [SettlementController::class, 'balance']);

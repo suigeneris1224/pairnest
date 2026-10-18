@@ -2,7 +2,7 @@
 // every screen can be opened by URL (e.g. /#/goals, /?theme=midnight#/us,
 // /?onboarding=1 for the welcome flow, /?empty=1 for a brand-new nest, /?due=1 or /?due=2 for bill
 // reminders, /?tight=1 for a nearly spent budget, /?scenes=1 for every goal
-// illustration). Not used by the real app.
+// illustration, /?brands=1 for every bank and wallet card). Not used by the real app.
 //
 //   flutter build web -t tool/preview_main.dart -o build/preview
 import 'package:flutter/material.dart';
@@ -12,6 +12,7 @@ import 'package:pairnest/core/theme/app_theme.dart';
 import 'package:pairnest/core/theme/palettes.dart';
 import 'package:pairnest/core/widgets/categories.dart';
 import 'package:pairnest/core/widgets/nest_ui.dart';
+import 'package:pairnest/core/widgets/wallet_brands.dart';
 import 'package:pairnest/data/mock_repository.dart';
 import 'package:pairnest/data/models.dart';
 import 'package:pairnest/data/providers.dart';
@@ -21,6 +22,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final theme = Uri.base.queryParameters['theme'] ?? 'sage';
   if (Uri.base.queryParameters['scenes'] != null) return runApp(_SceneGallery(theme));
+  if (Uri.base.queryParameters['brands'] != null) return runApp(_BrandGallery(theme));
   // ignore: invalid_use_of_visible_for_testing_member
   final fresh = Uri.base.queryParameters['fresh'] != null; // ?fresh=1 starts at onboarding
   // ignore: invalid_use_of_visible_for_testing_member
@@ -119,4 +121,36 @@ class _SceneGallery extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BrandGallery extends StatelessWidget {
+  const _BrandGallery(this.theme);
+
+  final String theme;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: buildTheme(paletteById(theme), googleFonts: false),
+    home: Scaffold(
+      body: GridView.count(
+        crossAxisCount: 4,
+        padding: const EdgeInsets.all(12),
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.45,
+        children: [
+          for (final b in walletBrands)
+            WalletCard(
+              title: b.name,
+              holder: 'ALEX & SAM',
+              number: '4821',
+              colors: b.colors,
+              accent: b.accent,
+              child: Text('₱12,500', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.white)),
+            ),
+        ],
+      ),
+    ),
+  );
 }

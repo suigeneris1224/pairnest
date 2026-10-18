@@ -224,6 +224,7 @@ class ApiRepository implements PairnestRepository {
     'is_split': d.isSplit,
     'occurred_on': dayKey(d.occurredOn),
     if (d.paidBy != null) 'user_id': d.paidBy,
+    'wallet_id': d.walletId,
   };
 
   @override
@@ -349,6 +350,35 @@ class ApiRepository implements PairnestRepository {
     final res = await _dio.post('bills/$id/unpay', data: {'transaction_id': transactionId, 'next_due_on': dayKey(previousDue)});
     return Bill.fromJson(res.data as Map<String, dynamic>);
   });
+
+  @override
+  Future<List<Wallet>> wallets() =>
+      _call(() async => [for (final w in (await _dio.get('wallets')).data as List) Wallet.fromJson(w as Map<String, dynamic>)]);
+
+  @override
+  Future<Wallet> addWallet(WalletDraft d) => _call(() async {
+    final res = await _dio.post('wallets', data: {..._walletBody(d), 'is_shared': d.isShared, 'balance': ?d.balance});
+    return Wallet.fromJson(res.data as Map<String, dynamic>);
+  });
+
+  @override
+  Future<Wallet> updateWallet(int id, WalletDraft d) =>
+      _call(() async => Wallet.fromJson((await _dio.patch('wallets/$id', data: _walletBody(d))).data as Map<String, dynamic>));
+
+  @override
+  Future<void> archiveWallet(int id) => _call(() => _dio.delete('wallets/$id'));
+
+  @override
+  Future<Wallet> setWalletBalance(int id, double balance) =>
+      _call(() async => Wallet.fromJson((await _dio.post('wallets/$id/balance', data: {'balance': balance})).data as Map<String, dynamic>));
+
+  static Map<String, dynamic> _walletBody(WalletDraft d) => {
+    'name': d.name,
+    'kind': d.kind,
+    'provider': d.provider,
+    'last4': d.last4,
+    'show_balance_to_partner': d.showBalanceToPartner,
+  };
 
   @override
   Future<List<Payday>> paydays() =>

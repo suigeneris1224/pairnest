@@ -1274,9 +1274,33 @@ class SkeletonList extends StatelessWidget {
 /// wave pattern, chip and cardholder names. [child] is the
 /// balance in the middle; [strip] (optional) tucks under the card's bottom edge.
 class WalletCard extends StatefulWidget {
-  const WalletCard({super.key, required this.child, required this.holder, required this.number, this.trailing, this.strip, this.onTap});
+  const WalletCard({
+    super.key,
+    required this.child,
+    required this.holder,
+    required this.number,
+    this.title = 'Our Card',
+    this.trailing,
+    this.strip,
+    this.onTap,
+    this.colors,
+    this.accent,
+    this.emblem,
+  });
 
   final Widget child;
+
+  /// Top-left name, e.g. "Our Card" or a bank's name.
+  final String title;
+
+  /// Light, base and dark gradient stops; the theme's colour when null.
+  final List<Color>? colors;
+
+  /// A thin stripe along the top in a brand's second colour.
+  final Color? accent;
+
+  /// Replaces the chip and contactless mark, e.g. a phone for e-wallets.
+  final Widget? emblem;
 
   /// Cardholder line, e.g. "ALEX & SAM".
   final String holder;
@@ -1327,7 +1351,8 @@ class _WalletCardState extends State<WalletCard> {
 
   Widget _face(BuildContext context) {
     final p = context.pn;
-    final base = p.isDark ? const Color(0xFF2E3D63) : p.primaryDeep;
+    final base = widget.colors?[1] ?? (p.isDark ? const Color(0xFF2E3D63) : p.primaryDeep);
+    final stops = widget.colors ?? [Color.lerp(base, Colors.white, 0.14)!, base, _darken(base, 0.28)];
     final radius = BorderRadius.circular(22);
     const soft = TextStyle(color: Color(0xDDFFFFFF), fontSize: 11.5, letterSpacing: 1.6, fontWeight: FontWeight.w600);
 
@@ -1342,12 +1367,7 @@ class _WalletCardState extends State<WalletCard> {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: radius,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color.lerp(base, Colors.white, 0.14)!, base, _darken(base, 0.28)],
-              stops: const [0, 0.45, 1],
-            ),
+            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: stops, stops: const [0, 0.45, 1]),
             boxShadow: [BoxShadow(color: base.withValues(alpha: 0.32), blurRadius: 24, offset: const Offset(0, 12))],
           ),
           child: ClipRRect(
@@ -1355,6 +1375,7 @@ class _WalletCardState extends State<WalletCard> {
             child: Stack(
               children: [
                 const Positioned.fill(child: CustomPaint(painter: _WavePainter())),
+                if (widget.accent != null) Positioned(top: 0, left: 0, right: 0, height: 5, child: ColoredBox(color: widget.accent!)),
                 // Diagonal sheen, like light across a card.
                 Positioned.fill(
                   child: DecoratedBox(
@@ -1376,21 +1397,29 @@ class _WalletCardState extends State<WalletCard> {
                       children: [
                         Row(
                           children: [
-                            const Text('Our Card', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.2)),
-                            const SizedBox(width: 8),
                             Expanded(
-                              child: Align(alignment: Alignment.centerRight, child: widget.trailing),
+                              child: Text(
+                                widget.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.2),
+                              ),
                             ),
+                            if (widget.trailing != null) ...[
+                              const SizedBox(width: 8),
+                              ConstrainedBox(constraints: const BoxConstraints(maxWidth: 170), child: widget.trailing),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            const SizedBox(width: 36, height: 27, child: CustomPaint(painter: _ChipPainter())),
-                            const SizedBox(width: 10),
-                            Icon(Icons.contactless_outlined, size: 22, color: Colors.white.withValues(alpha: 0.85)),
-                          ],
-                        ),
+                        widget.emblem ??
+                            Row(
+                              children: [
+                                const SizedBox(width: 36, height: 27, child: CustomPaint(painter: _ChipPainter())),
+                                const SizedBox(width: 10),
+                                Icon(Icons.contactless_outlined, size: 22, color: Colors.white.withValues(alpha: 0.85)),
+                              ],
+                            ),
                         const SizedBox(height: 4),
                         Expanded(child: widget.child),
                         Row(
@@ -1401,8 +1430,10 @@ class _WalletCardState extends State<WalletCard> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text('•••• ${widget.number}', style: soft.copyWith(fontSize: 11, letterSpacing: 2)),
-                                  const SizedBox(height: 2),
+                                  if (widget.number.isNotEmpty) ...[
+                                    Text('•••• ${widget.number}', style: soft.copyWith(fontSize: 11, letterSpacing: 2)),
+                                    const SizedBox(height: 2),
+                                  ],
                                   Text(
                                     widget.holder,
                                     maxLines: 1,
