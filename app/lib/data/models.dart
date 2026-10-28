@@ -686,6 +686,29 @@ class Dashboard {
 }
 
 /// One thing your partner did, for the notification feed.
+/// A phone signed in to your account.
+class Device {
+  const Device({required this.id, required this.relinked, required this.current, this.createdAt, this.lastUsedAt});
+
+  factory Device.fromJson(Map<String, dynamic> j) => Device(
+    id: j['id'] as int,
+    relinked: (j['relinked'] ?? false) as bool,
+    current: (j['current'] ?? false) as bool,
+    createdAt: _date(j['created_at']),
+    lastUsedAt: _date(j['last_used_at']),
+  );
+
+  final int id;
+
+  /// Added with a code from the partner's phone.
+  final bool relinked;
+
+  /// The phone you're holding.
+  final bool current;
+  final DateTime? createdAt;
+  final DateTime? lastUsedAt;
+}
+
 class FeedItem {
   const FeedItem({required this.type, required this.userName, required this.title, this.subtitle, this.amount, required this.at});
 

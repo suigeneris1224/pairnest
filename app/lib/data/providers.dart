@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/format.dart';
+import '../core/pref_keys.dart';
 import '../core/mascot/mascot_controller.dart';
 import '../features/recap/monthly_recap.dart';
 import '../core/theme/palettes.dart';
@@ -16,10 +19,19 @@ import 'models.dart';
 import 'repository.dart';
 
 /// Set with `--dart-define=API_URL=https://api.example.com/api/v1`.
-/// When empty the app runs on in-memory demo data.
+/// When empty the app runs on in-memory demo data, which a release build
+/// refuses: shipping the demo by mistake would look like a working app.
 const apiUrl = String.fromEnvironment('API_URL');
 
-final repositoryProvider = Provider<PairnestRepository>((ref) => apiUrl.isEmpty ? MockRepository() : ApiRepository(apiUrl));
+final repositoryProvider = Provider<PairnestRepository>((ref) {
+  if (apiUrl.isEmpty) {
+    if (kReleaseMode && !kIsWeb) throw StateError('Release builds need --dart-define=API_URL=https://...');
+    return MockRepository();
+  }
+  // A token rejected mid-session (this phone was removed, or it expired)
+  // signs out here instead of leaving every screen on an error.
+  return ApiRepository(apiUrl, onSignedOut: () => ref.read(sessionProvider.notifier).signedOut());
+});
 
 /// Overridden in `main()` with the loaded instance.
 final prefsProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError());
@@ -41,11 +53,11 @@ class FlagNotifier extends Notifier<bool> {
   }
 }
 
-final onboardedProvider = NotifierProvider<FlagNotifier, bool>(() => FlagNotifier('onboarded'));
-final themeChosenProvider = NotifierProvider<FlagNotifier, bool>(() => FlagNotifier('theme_chosen'));
+final onboardedProvider = NotifierProvider<FlagNotifier, bool>(() => FlagNotifier(PrefKeys.onboarded));
+final themeChosenProvider = NotifierProvider<FlagNotifier, bool>(() => FlagNotifier(PrefKeys.themeChosen));
 
 class ThemeNotifier extends Notifier<PairnestPalette> {
-  static const _key = 'theme';
+  static const _key = PrefKeys.theme;
 
   @override
   PairnestPalette build() => paletteById(ref.read(prefsProvider).getString(_key));
@@ -102,6 +114,21 @@ class SessionNotifier extends AsyncNotifier<Me?> {
 
   Future<void> logout() async {
     await _repo.logout();
+    signedOut();
+  }
+
+  /// Forgets everything the account loaded or remembered on this phone, so
+  /// whoever signs in next starts clean. This phone's own choices (theme,
+  /// hidden amounts) stay.
+  void signedOut() {
+    for (final p in _accountProviders) {
+      ref.invalidate(p);
+    }
+    final prefs = ref.read(prefsProvider);
+    for (final key in prefs.getKeys().where(PrefKeys.isAccountKey).toList()) {
+      prefs.remove(key);
+    }
+    ref.invalidate(feedSeenProvider);
     state = const AsyncData(null);
   }
 }
@@ -137,7 +164,7 @@ final feedProvider = FutureProvider<List<FeedItem>>((ref) => ref.watch(repositor
 
 /// When the bell's feed was last opened; newer items light up the dot.
 class FeedSeenNotifier extends Notifier<DateTime?> {
-  static const _key = 'feed_seen_at';
+  static const _key = PrefKeys.feedSeenAt;
 
   @override
   DateTime? build() {
@@ -245,7 +272,7 @@ final mascotControllerProvider = Provider<MascotController>((ref) {
 
 /// The eye toggle on the balance card: hide amounts when others can see the screen.
 class HideAmountsNotifier extends Notifier<bool> {
-  static const _key = 'hide_amounts';
+  static const _key = PrefKeys.hideAmounts;
 
   @override
   bool build() => ref.read(prefsProvider).getBool(_key) ?? false;
@@ -258,14 +285,27 @@ class HideAmountsNotifier extends Notifier<bool> {
 
 final hideAmountsProvider = NotifierProvider<HideAmountsNotifier, bool>(HideAmountsNotifier.new);
 
-final transactionsProvider = FutureProvider.family<List<Txn>, (DateTime, String)>(
-  (ref, args) => ref.watch(repositoryProvider).transactions(month: args.$1, query: args.$2),
-);
+/// Keeps an auto-disposing provider for [duration] after its last listener
+/// goes, so flipping between months is instant but every search term and
+/// range ever typed isn't kept forever.
+void _cacheFor(Ref ref, [Duration duration = const Duration(minutes: 5)]) {
+  final link = ref.keepAlive();
+  Timer? timer;
+  ref.onCancel(() => timer = Timer(duration, link.close));
+  ref.onResume(() => timer?.cancel());
+  ref.onDispose(() => timer?.cancel());
+}
+
+final transactionsProvider = FutureProvider.autoDispose.family<List<Txn>, (DateTime, String)>((ref, args) {
+  _cacheFor(ref);
+  return ref.watch(repositoryProvider).transactions(month: args.$1, query: args.$2);
+});
 
 /// Transactions between two days (inclusive), for Activity's custom range.
-final transactionsRangeProvider = FutureProvider.family<List<Txn>, (DateTime, DateTime, String)>(
-  (ref, args) => ref.watch(repositoryProvider).transactions(from: args.$1, to: args.$2, query: args.$3),
-);
+final transactionsRangeProvider = FutureProvider.autoDispose.family<List<Txn>, (DateTime, DateTime, String)>((ref, args) {
+  _cacheFor(ref);
+  return ref.watch(repositoryProvider).transactions(from: args.$1, to: args.$2, query: args.$3);
+});
 
 final budgetProvider = FutureProvider.family<BudgetSummary, DateTime>(
   (ref, month) => ref.watch(repositoryProvider).budget(monthStart(month)),
@@ -315,6 +355,9 @@ final balanceProvider = FutureProvider<SplitBalance>((ref) => ref.watch(reposito
 
 final plansProvider = FutureProvider<List<Plan>>((ref) => ref.watch(repositoryProvider).plans());
 
+/// The phones signed in to your account.
+final devicesProvider = FutureProvider.autoDispose<List<Device>>((ref) => ref.watch(repositoryProvider).devices());
+
 /// Providers that depend on transactions.
 final _moneyProviders = <ProviderOrFamily>[
   dashboardProvider,
@@ -327,6 +370,19 @@ final _moneyProviders = <ProviderOrFamily>[
   walletsProvider,
   balanceProvider,
   goalsProvider,
+];
+
+/// Everything loaded for the signed-in account, dropped when it signs out.
+final _accountProviders = <ProviderOrFamily>[
+  ..._moneyProviders,
+  moodsProvider,
+  talkProvider,
+  talkHistoryProvider,
+  plansProvider,
+  recapProvider,
+  avatarProvider,
+  devicesProvider,
+  pendingRecoveryKeyProvider,
 ];
 
 /// Refresh everything that depends on transactions after a money change.

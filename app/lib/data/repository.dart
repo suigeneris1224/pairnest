@@ -24,6 +24,10 @@ abstract class PairnestRepository {
   /// "Remove this phone."
   Future<void> logout();
 
+  /// The phones signed in to your account, and signing one of them out.
+  Future<List<Device>> devices();
+  Future<void> removeDevice(int id);
+
   /// Your profile photo; only you and your partner can see it.
   Future<Me> uploadAvatar(Uint8List bytes, String filename);
   Future<Me> removeAvatar();

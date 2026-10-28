@@ -1,3 +1,5 @@
+import '../../core/pref_keys.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,7 +45,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   late bool _noWallet = _existing != null;
   bool _busy = false;
 
-  static const _lastWalletKey = 'last_wallet_id';
+  static const _lastWalletKey = PrefKeys.lastWallet;
 
   bool get _isExpense => _type == 'expense';
   bool get _editing => _existing != null;
@@ -121,16 +123,20 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   /// Whoever pays can use shared wallets and their own.
   int get _payer => _isExpense ? _paidBy : (_existing?.userId ?? ref.read(meProvider).user.id);
 
+  /// Shared wallets, plus the payer's own when you are the payer: your
+  /// partner's personal wallets are theirs to log.
+  bool _canPick(Wallet w) => w.usableBy(_payer) && w.usableBy(ref.read(meProvider).user.id);
+
   Wallet? _usableWallet(List<Wallet> wallets) {
-    final picked = wallets.where((w) => w.id == _walletId && w.usableBy(_payer)).firstOrNull;
+    final picked = wallets.where((w) => w.id == _walletId && _canPick(w)).firstOrNull;
     if (picked != null || _noWallet || !_isExpense) return picked;
-    return wallets.where((w) => w.builtin && w.ownerId == _payer).firstOrNull;
+    return wallets.where((w) => w.builtin && w.ownerId == _payer && _canPick(w)).firstOrNull;
   }
 
-  /// The payer's Cash first, then shared wallets, then the rest.
+  /// Your Cash first, then shared wallets, then the rest.
   List<Wallet> _choices(List<Wallet> wallets) {
     int rank(Wallet w) => w.builtin ? 0 : (w.isShared ? 1 : 2);
-    final usable = wallets.where((w) => w.usableBy(_payer)).toList();
+    final usable = wallets.where(_canPick).toList();
     return [
       for (final r in [0, 1, 2])
         for (final w in usable)

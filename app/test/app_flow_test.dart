@@ -12,6 +12,7 @@ import 'package:pairnest/core/widgets/common.dart';
 import 'package:pairnest/core/widgets/member_avatar.dart';
 import 'package:pairnest/core/widgets/nest_ui.dart';
 import 'package:pairnest/core/mascot/mascot.dart';
+import 'package:pairnest/core/pref_keys.dart';
 import 'package:pairnest/core/theme/palettes.dart';
 import 'package:pairnest/data/mock_repository.dart';
 import 'package:pairnest/data/models.dart';
@@ -1300,16 +1301,13 @@ void main() {
     await _settle(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Settle up'));
     await _settle(tester);
-    // Your side starts on your Cash; Sam's isn't tracked unless picked.
+    // Your side starts on your Cash; Sam's wallets are Sam's to track.
     expect(find.text('Received in your wallet'), findsOneWidget);
     expect(find.text('Cash'), findsOneWidget);
-    await tester.tap(find.text('Not tracked'));
-    await _settle(tester);
-    await tester.tap(find.text('BDO Debit').last);
-    await _settle(tester);
+    expect(find.textContaining("Sam's wallet"), findsNothing);
     await tester.tap(find.text('Record ₱415'));
     await _settle(tester);
-    expect(find.text('BDO Debit → Cash · ${shortDate(DateTime.now())}'), findsOneWidget);
+    expect(find.text('Into Cash · ${shortDate(DateTime.now())}'), findsOneWidget);
     expect((await resolve(repo.wallets())).firstWhere((w) => w.id == 5).balance, 1500 + 415);
 
     await tester.tap(find.text('Undo'));
@@ -1416,6 +1414,72 @@ void main() {
     await tester.tap(find.byTooltip('View history'));
     await _settle(tester);
     expect(container.read(routerProvider).state.uri.path, '/feelings');
+  });
+
+  testWidgets("logging for the partner offers shared wallets, never either person's own", (tester) async {
+    final container = await _signedIn(tester);
+    container.read(routerProvider).push('/add');
+    await _settle(tester);
+    await tester.enterText(find.byType(TextField).first, '120');
+    await tester.scrollUntilVisible(find.text('Paid by'), 150, scrollable: _addForm);
+    await _settle(tester);
+    await tester.tap(find.text('Sam'));
+    await _settle(tester);
+
+    final labels = [for (final c in tester.widgetList<ChoiceChip>(find.byType(ChoiceChip))) (c.label as Text).data];
+    // Only the shared wallet: Sam's BDO and Cash are Sam's to log, and Alex's can't pay for Sam.
+    expect(labels, ['Our Maya · Ours', 'No wallet']);
+    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'No wallet')).selected, isTrue);
+  });
+
+  testWidgets("signing out forgets the account's data but keeps this phone's choices", (tester) async {
+    final container = await _signedIn(tester);
+    final prefs = container.read(prefsProvider);
+    await prefs.setInt(PrefKeys.lastWallet, 2);
+    await prefs.setInt(PrefKeys.lastSettleWallet, 5);
+    await prefs.setBool(PrefKeys.recapSeen('2026-09'), true);
+    await prefs.setBool(PrefKeys.hideAmounts, true);
+    container.read(feedSeenProvider.notifier).markSeen();
+
+    final out = container.read(sessionProvider.notifier).logout();
+    await _settle(tester);
+    await out;
+
+    expect(container.read(sessionProvider).value, isNull);
+    expect(
+      [prefs.getInt(PrefKeys.lastWallet), prefs.getInt(PrefKeys.lastSettleWallet), prefs.getBool(PrefKeys.recapSeen('2026-09'))],
+      [null, null, null],
+    );
+    expect(container.read(feedSeenProvider), isNull);
+    expect(prefs.getBool(PrefKeys.hideAmounts), isTrue, reason: "hiding amounts is this phone's choice");
+    expect(prefs.getBool(PrefKeys.onboarded), isTrue);
+  });
+
+  testWidgets('Phones lists where you are signed in and signs another phone out', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    // A re-link adds this phone; the one from before stays signed in.
+    final relink = container.read(sessionProvider.notifier).redeemRelink('QX4M-7KDP');
+    await _settle(tester);
+    await relink;
+
+    container.read(routerProvider).go('/us/personalize');
+    await _settle(tester);
+    await tester.tap(find.text('Settings'));
+    await _settle(tester);
+    await tester.scrollUntilVisible(find.text('Phones'), 200, scrollable: find.byType(Scrollable).last);
+    await tester.tap(find.text('Phones'));
+    await _settle(tester);
+    expect(find.text('This phone'), findsOneWidget);
+    expect(find.text('Another phone'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Sign out'));
+    await _settle(tester);
+    expect(find.text('That phone was signed out.'), findsOneWidget);
+    expect(find.text('Another phone'), findsNothing);
+    final left = repo.devices();
+    await _settle(tester);
+    expect((await left).single.current, isTrue);
   });
 }
 

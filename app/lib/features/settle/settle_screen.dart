@@ -1,3 +1,5 @@
+import '../../core/pref_keys.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,7 +68,7 @@ Future<void> settleUp(BuildContext context, WidgetRef ref, Owes owes) async {
   }
 }
 
-const _lastSettleWalletKey = 'last_settle_wallet_id';
+const _lastSettleWalletKey = PrefKeys.lastSettleWallet;
 
 class SettleScreen extends ConsumerWidget {
   const SettleScreen({super.key});
@@ -283,8 +285,13 @@ class _HistoryCard extends ConsumerWidget {
                             ),
                             Text(
                               [
-                                if (s.fromWalletName != null || s.toWalletName != null)
-                                  '${s.fromWalletName ?? 'Cash'} → ${s.toWalletName ?? 'Cash'}',
+                                // Each side tracks its own wallet, so often only one is known.
+                                if (s.fromWalletName != null && s.toWalletName != null)
+                                  '${s.fromWalletName} → ${s.toWalletName}'
+                                else if (s.fromWalletName != null)
+                                  'From ${s.fromWalletName}'
+                                else if (s.toWalletName != null)
+                                  'Into ${s.toWalletName}',
                                 shortDate(s.settledOn),
                               ].join(' · '),
                               style: TextStyle(color: p.muted, fontSize: 12),
@@ -318,7 +325,7 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
   late int? _toWallet = _myDefault(widget.owes.to.id);
 
   /// Your side starts on the wallet you settled from last time, else your
-  /// Cash; your partner's side starts untracked.
+  /// Cash; your partner's side is never set from here.
   int? _myDefault(int userId) {
     final me = ref.read(meProvider).user.id;
     if (userId != me) return null;
@@ -391,22 +398,25 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
               ),
               const SizedBox(height: 8),
               Text('Paying part of it is fine. The rest stays on the balance.', style: TextStyle(color: p.muted, fontSize: 12.5)),
-              WalletDropdown(
-                label: owes.from.id == me.user.id ? 'Paid from your wallet' : "Paid from ${owes.from.name}'s wallet",
-                userId: owes.from.id,
-                personalOnly: true,
-                noneLabel: 'Not tracked',
-                value: _fromWallet,
-                onChanged: (id) => setState(() => _fromWallet = id),
-              ),
-              WalletDropdown(
-                label: owes.to.id == me.user.id ? 'Received in your wallet' : "Received in ${owes.to.name}'s wallet",
-                userId: owes.to.id,
-                personalOnly: true,
-                noneLabel: 'Not tracked',
-                value: _toWallet,
-                onChanged: (id) => setState(() => _toWallet = id),
-              ),
+              // Only your side: your partner's wallets are theirs to track.
+              if (owes.from.id == me.user.id)
+                WalletDropdown(
+                  label: 'Paid from your wallet',
+                  userId: owes.from.id,
+                  personalOnly: true,
+                  noneLabel: 'Not tracked',
+                  value: _fromWallet,
+                  onChanged: (id) => setState(() => _fromWallet = id),
+                )
+              else
+                WalletDropdown(
+                  label: 'Received in your wallet',
+                  userId: owes.to.id,
+                  personalOnly: true,
+                  noneLabel: 'Not tracked',
+                  value: _toWallet,
+                  onChanged: (id) => setState(() => _toWallet = id),
+                ),
               const SizedBox(height: 18),
               FilledButton(onPressed: _submit, child: Text(v == null || v <= 0 ? 'Record payment' : 'Record ${peso(v)}')),
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),

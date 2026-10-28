@@ -277,7 +277,28 @@ class MockRepository implements PairnestRepository {
   @override
   Future<Me> redeemRelink(String code) => code.replaceAll(RegExp('[^A-Za-z0-9]'), '').length != 8
       ? Future.delayed(latency, () => throw Exception('That code has expired or was already used. Ask your partner for a new one.'))
-      : recover(demoKey);
+      : recover(demoKey).then((me) {
+          // Adds a phone; the old one stays signed in.
+          _devices = [
+            Device(id: _nextId++, relinked: true, current: true, createdAt: DateTime.now(), lastUsedAt: DateTime.now()),
+            for (final d in _devices)
+              Device(id: d.id, relinked: d.relinked, current: false, createdAt: d.createdAt, lastUsedAt: d.lastUsedAt),
+          ];
+          return me;
+        });
+
+  /// This phone, plus the old one from before a re-link.
+  List<Device> _devices = [Device(id: 900, relinked: false, current: true, createdAt: DateTime(2026, 3, 2), lastUsedAt: DateTime.now())];
+
+  @override
+  Future<List<Device>> devices() => _delay(() => List.of(_devices));
+
+  @override
+  Future<void> removeDevice(int id) => _delay(() {
+    if (!_devices.any((d) => d.id == id)) throw Exception('That phone is already signed out.');
+    if (_devices.firstWhere((d) => d.id == id).current) _me = null;
+    _devices.removeWhere((d) => d.id == id);
+  });
 
   @override
   Future<({String code, DateTime expiresAt, String forName})> relinkCode() => _delay(() {
@@ -483,10 +504,12 @@ class MockRepository implements PairnestRepository {
     if (members.length < 2) throw Exception('Your partner needs to join before you can settle up.');
     final from = members.firstWhere((m) => m.id == fromUserId);
     final to = members.firstWhere((m) => m.id != fromUserId);
+    // Only your own side: your partner's wallets are theirs to track.
     Wallet? own(int? id, Member m) {
       if (id == null) return null;
+      if (m.id != _user.id) throw Exception('Only your partner can pick their wallet.');
       final w = _wallets.where((w) => w.id == id).firstOrNull;
-      if (w == null || w.ownerId != m.id) throw Exception("Pick one of ${m.id == _user.id ? 'your' : "${m.name}'s"} own wallets.");
+      if (w == null || w.ownerId != m.id) throw Exception('Pick one of your own wallets.');
       return w;
     }
 
@@ -511,7 +534,11 @@ class MockRepository implements PairnestRepository {
   });
 
   @override
-  Future<void> deleteSettlement(int id) => _delay(() => _settlements.removeWhere((s) => s.id == id));
+  Future<void> deleteSettlement(int id) => _delay(() {
+    final s = _settlements.where((s) => s.id == id).firstOrNull;
+    if (s != null) _ensureNotPartners([s.fromWalletId, s.toWalletId]);
+    _settlements.removeWhere((s) => s.id == id);
+  });
 
   @override
   Future<({Bill bill, int transactionId})> payBill(int id) async {
@@ -588,6 +615,26 @@ class MockRepository implements PairnestRepository {
     final w = _wallets.where((w) => w.id == id).firstOrNull;
     if (w == null || !w.usableBy(userId)) throw Exception('Pick one of your wallets or a shared one.');
     return id;
+  }
+
+  /// [_checkWallet] for the payer, and you must be able to use it too: a
+  /// partner's personal wallet is theirs to log, as the server checks it.
+  int? _checkLogWallet(int? id, int payerId) {
+    final checked = _checkWallet(id, payerId);
+    if (checked != null && !_rawWallet(checked).usableBy(_user.id)) {
+      throw Exception('Pick a shared wallet, or let them log it from their own.');
+    }
+    return checked;
+  }
+
+  /// Only a wallet's owner changes entries on it.
+  void _ensureNotPartners(List<int?> ids) {
+    for (final id in ids) {
+      final w = _wallets.where((w) => w.id == id).firstOrNull;
+      if (w != null && !w.isShared && w.ownerId != _user.id) {
+        throw Exception('Only ${w.ownerName} can change entries on their own wallets.');
+      }
+    }
   }
 
   /// A remembered wallet if [userId] can still use it, else none.
@@ -882,7 +929,7 @@ class MockRepository implements PairnestRepository {
       paymentMethod: d.walletId == null ? d.paymentMethod : _walletPaymentMethod(d.walletId!),
       isSplit: d.isSplit,
       occurredOn: d.occurredOn,
-      walletId: _checkWallet(d.walletId, payer.id),
+      walletId: _checkLogWallet(d.walletId, payer.id),
     );
     _txns.add(t);
     return t;
@@ -893,6 +940,7 @@ class MockRepository implements PairnestRepository {
     final i = _txns.indexWhere((t) => t.id == id);
     if (i < 0) throw Exception('That transaction no longer exists.');
     final old = _txns[i];
+    _ensureNotPartners([old.walletId, old.toWalletId]);
     final payer = _payer(d, Member(id: old.userId, name: old.userName));
     return _txns[i] = Txn(
       id: id,
@@ -906,7 +954,7 @@ class MockRepository implements PairnestRepository {
       isSplit: d.isSplit,
       occurredOn: d.occurredOn,
       goalId: old.goalId,
-      walletId: _checkWallet(d.walletId, payer.id),
+      walletId: _checkLogWallet(d.walletId, payer.id),
     );
   });
 
@@ -915,6 +963,7 @@ class MockRepository implements PairnestRepository {
     final i = _txns.indexWhere((t) => t.id == id);
     if (i < 0) return;
     if (_txns[i].isRelease) throw Exception('Restore the goal instead.');
+    _ensureNotPartners([_txns[i].walletId, _txns[i].toWalletId]);
     final t = _txns.removeAt(i);
     if (t.isTransfer) _addToGoal(t.goalId, -t.amount);
     // A move's fee goes with it.

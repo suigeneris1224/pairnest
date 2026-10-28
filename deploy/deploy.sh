@@ -12,6 +12,10 @@ SERVER="${SERVER:?Set SERVER to your domain or public IP}"
 SSH_USER="${SSH_USER:-deploy}"
 if [[ "$SERVER" =~ ^[0-9.]+$ ]]; then SCHEME="${SCHEME:-http}"; else SCHEME="${SCHEME:-https}"; fi
 API_URL="$SCHEME://$SERVER/api/v1"
+if [[ "$SCHEME" == "http" ]]; then
+  echo "!!  WARNING: shipping over plain HTTP. Sign-in tokens and money data travel unencrypted." >&2
+  echo "!!  Point a domain at the server and use SCHEME=https before real use." >&2
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE=$(date +%Y%m%d%H%M%S)
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new)

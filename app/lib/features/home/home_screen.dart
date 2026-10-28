@@ -1,3 +1,5 @@
+import '../../core/pref_keys.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -257,7 +259,7 @@ class _RecapNudgeState extends ConsumerState<_RecapNudge> {
   Widget build(BuildContext context) {
     final now = ref.watch(nowProvider)();
     final last = DateTime(now.year, now.month - 1);
-    final key = 'recap_seen_${monthKey(last)}';
+    final key = PrefKeys.recapSeen(monthKey(last));
     final prefs = ref.watch(prefsProvider);
     if (now.day > 7 || _dismissed || (prefs.getBool(key) ?? false)) return const SizedBox.shrink();
     final p = context.pn;
@@ -589,6 +591,7 @@ class _FeedTypeBadge extends StatelessWidget {
       'mood' => (Icons.favorite_rounded, Pastel.peach),
       'settle' => (Icons.handshake_rounded, Pastel.peach),
       'topup' => (Icons.account_balance_wallet_rounded, Pastel.sky),
+      'device' => (Icons.phonelink_lock_rounded, Pastel.peach),
       _ => (Icons.chat_bubble_rounded, Pastel.lavender),
     };
     return Container(

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/format.dart';
@@ -8,15 +9,27 @@ import 'models.dart';
 import 'payday_schedule.dart';
 import 'repository.dart';
 
+/// A failed API call: what to tell the person, and the HTTP status if any.
+class ApiException implements Exception {
+  const ApiException(this.message, {this.status});
+
+  final String message;
+  final int? status;
+
+  @override
+  String toString() => message;
+}
+
 /// Talks to the Laravel API (`backend/`), authenticating with a Sanctum token.
 class ApiRepository implements PairnestRepository {
-  ApiRepository(String baseUrl, {FlutterSecureStorage? storage})
+  ApiRepository(String baseUrl, {FlutterSecureStorage? storage, this.onSignedOut, @visibleForTesting HttpClientAdapter? adapter})
     : _storage = storage ?? const FlutterSecureStorage(),
       _dio = Dio(
         BaseOptions(
           baseUrl: baseUrl.endsWith('/') ? baseUrl : '$baseUrl/',
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 20),
+          sendTimeout: const Duration(seconds: 30),
           headers: {'Accept': 'application/json'},
         ),
       ) {
@@ -26,9 +39,22 @@ class ApiRepository implements PairnestRepository {
           if (_token != null) options.headers['Authorization'] = 'Bearer $_token';
           handler.next(options);
         },
+        onError: (e, handler) async {
+          // The token was revoked (removed from the other phone) or expired.
+          if (e.response?.statusCode == 401 && _token != null && e.requestOptions.headers['Authorization'] != null) {
+            _token = null;
+            await _persistToken(null);
+            onSignedOut?.call();
+          }
+          handler.next(e);
+        },
       ),
     );
+    if (adapter != null) _dio.httpClientAdapter = adapter;
   }
+
+  /// Called when the server stops accepting this phone's token mid-session.
+  void Function()? onSignedOut;
 
   static const _tokenKey = 'pairnest_token';
 
@@ -40,12 +66,15 @@ class ApiRepository implements PairnestRepository {
     try {
       return await fn();
     } on DioException catch (e) {
-      throw Exception(_message(e));
+      throw ApiException(_message(e), status: e.response?.statusCode);
     }
   }
 
   String _message(DioException e) {
     final data = e.response?.data;
+    final status = e.response?.statusCode ?? 0;
+    // Server errors may carry debugging details; never show those.
+    if (status >= 500) return 'Something went wrong on our side. Try again in a moment.';
     if (data is Map) {
       final errors = data['errors'];
       if (errors is Map && errors.isNotEmpty) {
@@ -96,12 +125,9 @@ class ApiRepository implements PairnestRepository {
     try {
       return await _me();
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        _token = null;
-        await _persistToken(null);
-        return null;
-      }
-      throw Exception(_message(e));
+      // The interceptor has already forgotten a rejected token.
+      if (e.response?.statusCode == 401) return null;
+      throw ApiException(_message(e), status: e.response?.statusCode);
     }
   }
 
@@ -146,7 +172,7 @@ class ApiRepository implements PairnestRepository {
       return res.data == null ? null : Uint8List.fromList(res.data!);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
-      throw Exception(_message(e));
+      throw ApiException(_message(e), status: e.response?.statusCode);
     }
   }
 
@@ -163,6 +189,15 @@ class ApiRepository implements PairnestRepository {
     _token = null;
     await _persistToken(null);
   }
+
+  @override
+  Future<List<Device>> devices() => _call(() async {
+    final data = (await _dio.get('auth/devices')).data as List;
+    return [for (final d in data) Device.fromJson(d as Map<String, dynamic>)];
+  });
+
+  @override
+  Future<void> removeDevice(int id) => _call(() => _dio.delete('auth/devices/$id'));
 
   @override
   Future<Me> createNest(String theme) => _call(() async {

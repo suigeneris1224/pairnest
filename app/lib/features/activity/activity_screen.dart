@@ -302,76 +302,87 @@ class _GroupedList extends StatelessWidget {
       byDay.putIfAbsent(longDate(t.occurredOn), () => []).add(t);
     }
 
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 96),
-      children: [
-        FadeSlideIn(
-          child: HeroCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: _HeroFigure('Money in', income, Icons.south_west_rounded)),
-                    Expanded(child: _HeroFigure('Money out', expense, Icons.north_east_rounded)),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                HeroProgress(income <= 0 ? (expense > 0 ? 1 : 0) : expense / income),
-                const SizedBox(height: 8),
-                Text(
-                  income >= expense
-                      ? '${peso(income - expense)} left over ${filtered ? 'in these results' : 'this month'}'
-                      : '${peso(expense - income)} more out than in',
-                  style: const TextStyle(color: Color(0xDDFFFFFF), fontSize: 12.5),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 14, 4, 0),
-          child: Text(
-            '${txns.length} ${txns.length == 1 ? 'transaction' : 'transactions'} · ${peso(expense)} out',
-            style: TextStyle(color: p.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
-          ),
-        ),
-        for (final (i, entry) in byDay.entries.indexed) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 18, 0, 6),
-            child: Text(
-              entry.key,
-              style: TextStyle(color: p.muted, fontWeight: FontWeight.w600, fontSize: 12),
-            ),
-          ),
-          FadeSlideIn(
-            index: i,
-            child: PairnestCard(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Column(
+    final days = byDay.entries.toList();
+    // Built lazily, a day at a time: a month or range can hold hundreds of rows.
+    final items = <Widget Function()>[
+      () => FadeSlideIn(
+        child: HeroCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  for (final t in entry.value)
-                    Dismissible(
-                      key: ValueKey('txn-${t.id}'),
-                      // A release is undone by restoring its goal, not by deleting it.
-                      direction: t.isRelease ? DismissDirection.none : DismissDirection.endToStart,
-                      background: const _DeleteBackground(),
-                      onDismissed: (_) => onDelete(t),
-                      child: TxnTile(t, walletName: walletNames[t.walletId], onTap: () => onEdit(t)),
-                    ),
+                  Expanded(child: _HeroFigure('Money in', income, Icons.south_west_rounded)),
+                  Expanded(child: _HeroFigure('Money out', expense, Icons.north_east_rounded)),
                 ],
               ),
-            ),
+              const SizedBox(height: 14),
+              HeroProgress(income <= 0 ? (expense > 0 ? 1 : 0) : expense / income),
+              const SizedBox(height: 8),
+              Text(
+                income >= expense
+                    ? '${peso(income - expense)} left over ${filtered ? 'in these results' : 'this month'}'
+                    : '${peso(expense - income)} more out than in',
+                style: const TextStyle(color: Color(0xDDFFFFFF), fontSize: 12.5),
+              ),
+            ],
           ),
-        ],
-        const SizedBox(height: 12),
-        Text(
+        ),
+      ),
+      () => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 14, 4, 0),
+        child: Text(
+          '${txns.length} ${txns.length == 1 ? 'transaction' : 'transactions'} · ${peso(expense)} out',
+          style: TextStyle(color: p.muted, fontSize: 12.5, fontWeight: FontWeight.w600),
+        ),
+      ),
+      for (final (i, entry) in days.indexed)
+        () => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 18, 0, 6),
+              child: Text(
+                entry.key,
+                style: TextStyle(color: p.muted, fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+            ),
+            FadeSlideIn(
+              index: i,
+              child: PairnestCard(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Column(
+                  children: [
+                    for (final t in entry.value)
+                      Dismissible(
+                        key: ValueKey('txn-${t.id}'),
+                        // A release is undone by restoring its goal, not by deleting it.
+                        direction: t.isRelease ? DismissDirection.none : DismissDirection.endToStart,
+                        background: const _DeleteBackground(),
+                        onDismissed: (_) => onDelete(t),
+                        child: TxnTile(t, walletName: walletNames[t.walletId], onTap: () => onEdit(t)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      () => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text(
           'Tap to edit · swipe left to delete',
           textAlign: TextAlign.center,
           style: TextStyle(color: p.muted, fontSize: 12),
         ),
-      ],
+      ),
+    ];
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 96),
+      itemCount: items.length,
+      itemBuilder: (_, i) => items[i](),
     );
   }
 }

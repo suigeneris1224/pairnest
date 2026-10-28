@@ -8,6 +8,7 @@ import '../../core/widgets/nest_ui.dart';
 import '../../core/theme/palettes.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/member_avatar.dart';
+import '../../data/models.dart';
 import '../../data/providers.dart';
 import '../onboarding/recovery_key_screen.dart';
 import '../theme_select/theme_select_screen.dart';
@@ -180,6 +181,17 @@ class _Settings extends ConsumerWidget {
                 onTap: () => _relink(context, ref),
               ),
               ListTile(
+                leading: const Icon(Icons.devices_rounded),
+                title: const Text('Phones'),
+                subtitle: const Text('See where your account is signed in, and sign a phone out'),
+                onTap: () => showModalBottomSheet<void>(
+                  context: context,
+                  useRootNavigator: true,
+                  isScrollControlled: true,
+                  builder: (_) => const _PhonesSheet(),
+                ),
+              ),
+              ListTile(
                 leading: const Icon(Icons.key_rounded),
                 title: const Text('New recovery key'),
                 subtitle: const Text('Lost yours? Make a new one; the old one stops working'),
@@ -209,7 +221,8 @@ class _Settings extends ConsumerWidget {
           title: 'Re-link ${r.forName}',
           message:
               'On ${r.forName}\'s new phone, open Pairnest and tap "I already have a nest", then enter this code. '
-              'It works once, until ${timeLabel(r.expiresAt)}.',
+              'It works once, until ${timeLabel(r.expiresAt)}. ${r.forName}\'s other phones stay signed in, '
+              'and you\'ll both see the new phone in your updates.',
           code: r.code,
         ),
       );
@@ -256,6 +269,69 @@ class _Settings extends ConsumerWidget {
   }
 }
 
+/// The phones signed in to your account, each with Sign out.
+class _PhonesSheet extends ConsumerWidget {
+  const _PhonesSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = context.pn;
+    final devices = ref.watch(devicesProvider);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Phones', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              "Don't recognise one? Sign it out. Phones added with your partner's code are marked.",
+              style: TextStyle(color: p.muted, fontSize: 12.5, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            switch (devices) {
+              AsyncData(:final value) => Column(
+                children: [
+                  for (final d in value)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(d.current ? Icons.smartphone_rounded : Icons.phone_android_outlined),
+                      title: Text(d.current ? 'This phone' : (d.relinked ? 'Added with a re-link code' : 'Another phone')),
+                      subtitle: Text(
+                        [
+                          if (d.createdAt != null) 'Signed in ${shortDate(d.createdAt!)}',
+                          if (d.lastUsedAt != null && !d.current) 'last used ${shortDate(d.lastUsedAt!)}',
+                        ].join(' · '),
+                      ),
+                      trailing: d.current ? null : TextButton(onPressed: () => _signOut(context, ref, d), child: const Text('Sign out')),
+                    ),
+                ],
+              ),
+              AsyncError(:final error) => Text(friendlyError(error), style: TextStyle(color: p.muted)),
+              _ => const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            },
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref, Device d) async {
+    try {
+      await ref.read(repositoryProvider).removeDevice(d.id);
+      ref.invalidate(devicesProvider);
+      if (context.mounted) showSnack(context, 'That phone was signed out.');
+    } catch (e) {
+      if (context.mounted) showSnack(context, friendlyError(e));
+    }
+  }
+}
+
 /// A one-time code or key with a Copy button.
 class _CodeSheet extends StatelessWidget {
   const _CodeSheet({required this.title, required this.message, required this.code});
@@ -267,8 +343,9 @@ class _CodeSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.pn;
+    // Scrolls rather than overflowing on short screens or with large text.
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,

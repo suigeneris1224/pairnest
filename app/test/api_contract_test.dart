@@ -193,6 +193,24 @@ void main() {
     );
     expect(spent.walletId, card.id);
     expect(spent.paymentMethod, 'card');
+    // Alex's card is Alex's to log: Sam can't spend from it for Alex, or change what's on it.
+    await expectLater(
+      sam.addTransaction(
+        TxnDraft(
+          type: 'expense',
+          amount: 1,
+          category: 'food',
+          title: 'Not mine',
+          paymentMethod: 'cash',
+          isSplit: false,
+          occurredOn: month,
+          walletId: card.id,
+          paidBy: a.me.user.id,
+        ),
+      ),
+      throwsA(anything),
+    );
+    await expectLater(sam.deleteTransaction(spent.id), throwsA(anything));
     final mine = await alex.wallets();
     expect(mine.first.name, 'Our Maya');
     expect(mine.firstWhere((w) => w.id == card.id).balance, -1200);
@@ -226,13 +244,17 @@ void main() {
     expect(fee.amount, 15);
     await alex.deleteTransaction(atm.transaction.id);
     expect((await alex.transactions(month: DateTime.now())).where((t) => t.moveId == atm.transaction.id), isEmpty);
-    // Settling up can come out of one wallet and land in another.
-    final paidBack = await sam.settleUp(amount: 50, fromUserId: samCash.ownerId!, fromWalletId: samCash.id, toWalletId: gcash.id);
-    expect(paidBack.toWalletName, 'GCash');
-    expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4150);
+    // Settling up can come out of your own wallet; your partner's is theirs to track.
+    await expectLater(
+      sam.settleUp(amount: 50, fromUserId: samCash.ownerId!, fromWalletId: samCash.id, toWalletId: gcash.id),
+      throwsA(anything),
+    );
     await expectLater(sam.settleUp(amount: 1, fromUserId: samCash.ownerId!, fromWalletId: gcash.id), throwsA(anything));
-    await sam.deleteSettlement(paidBack.id);
+    final paidBack = await sam.settleUp(amount: 50, fromUserId: samCash.ownerId!, fromWalletId: samCash.id);
+    expect([paidBack.fromWalletName, paidBack.toWalletName], ['Cash', null]);
     expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
+    await expectLater(alex.deleteSettlement(paidBack.id), throwsA(anything));
+    await sam.deleteSettlement(paidBack.id);
     // Paydays land in a wallet, bills are paid from one, goal savings come from one.
     final pay = await alex.addPayday(PaydayDraft(title: 'Bonus', amount: 900, frequency: 'weekly', nextOn: month, walletId: gcash.id));
     expect(pay.walletId, gcash.id);
@@ -273,18 +295,24 @@ void main() {
     expect(ranged.map((t) => t.title), contains('Old dinner'));
     expect(ranged, hasLength(32));
 
-    // Alex loses their phone: Sam re-links them, and the old phone is signed out.
+    // Alex gets a new phone: Sam re-links it. That adds a phone, so a partner
+    // can't use it to lock Alex out: the old phone stays in and can remove it.
     final relink = await sam.relinkCode();
     expect(relink.forName, 'Alex');
     final alexNewPhone = ApiRepository(apiUrl);
     expect((await alexNewPhone.redeemRelink(relink.code)).user.name, 'Alex');
-    await expectLater(alex.dashboard(), throwsA(anything));
     await expectLater(ApiRepository(apiUrl).redeemRelink(relink.code), throwsA(anything));
+    expect((await alex.feed()).first.type, 'device');
+    final phones = await alex.devices();
+    expect(phones.map((d) => (d.relinked, d.current)), [(true, false), (false, true)]);
+    await alex.removeDevice(phones.first.id);
+    await expectLater(alexNewPhone.dashboard(), throwsA(anything));
+    expect(await alex.devices(), hasLength(1));
 
-    // The recovery key works too, and signs out the phone before it.
+    // The recovery key works too, and signs out every phone before it.
     final alexThirdPhone = ApiRepository(apiUrl);
     expect((await alexThirdPhone.recover(a.recoveryKey)).couple!.inviteCode, nest.couple!.inviteCode);
-    await expectLater(alexNewPhone.dashboard(), throwsA(anything));
+    await expectLater(alex.dashboard(), throwsA(anything));
     expect((await alexThirdPhone.dashboard()).budget.total, 20000);
   }, skip: apiUrl.isEmpty ? 'Set --dart-define=API_URL to run against a live backend' : null);
 }

@@ -337,7 +337,10 @@ Future<bool> confirmDialog(
   return ok ?? false;
 }
 
+/// What to tell the person about [error]: a server or validation message,
+/// never a Dart type error or stack detail.
 String friendlyError(Object error) {
+  if (error is! Exception) return 'Something went wrong. Try again.';
   final text = error.toString();
   return text.startsWith('Exception: ') ? text.substring(11) : text;
 }
