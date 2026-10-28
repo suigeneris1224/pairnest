@@ -71,7 +71,7 @@ Route::prefix('v1')->group(function () {
             Route::post('paydays/{payday}/receive', [PaydayController::class, 'receive']);
             Route::post('paydays/{payday}/unreceive', [PaydayController::class, 'unreceive']);
             Route::get('balance', [SettlementController::class, 'balance']);
-            Route::apiResource('settlements', SettlementController::class)->only(['store', 'destroy']);
+            Route::apiResource('settlements', SettlementController::class)->only(['store', 'update', 'destroy']);
 
             Route::get('talks/current', [TalkController::class, 'current']);
             Route::post('talks/current/answer', [TalkController::class, 'answer']);

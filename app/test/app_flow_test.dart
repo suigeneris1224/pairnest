@@ -13,6 +13,7 @@ import 'package:pairnest/core/widgets/member_avatar.dart';
 import 'package:pairnest/core/widgets/nest_ui.dart';
 import 'package:pairnest/core/mascot/mascot.dart';
 import 'package:pairnest/core/pref_keys.dart';
+import 'package:pairnest/features/settle/settle_screen.dart';
 import 'package:pairnest/core/theme/palettes.dart';
 import 'package:pairnest/data/mock_repository.dart';
 import 'package:pairnest/data/models.dart';
@@ -1314,6 +1315,39 @@ void main() {
     await _settle(tester);
     expect((await resolve(repo.wallets())).firstWhere((w) => w.id == 5).balance, 1500);
     expect((await resolve(repo.balance())).owes!.amount, 415);
+  });
+
+  testWidgets('you can say where a settle-up your partner recorded landed', (tester) async {
+    final repo = MockRepository(latency: Duration.zero);
+    final container = await _signedIn(tester, repo: repo);
+    // Sam records paying Alex back, without knowing Alex's wallets.
+    final recorded = repo.settleUp(amount: 100, fromUserId: 2);
+    await _settle(tester);
+    await recorded;
+    invalidateMoneyIn(container);
+
+    container.read(routerProvider).go('/home/settle');
+    await _settle(tester);
+    await tester.scrollUntilVisible(
+      find.text('Set your wallet'),
+      200,
+      scrollable: find.descendant(of: find.byType(SettleScreen), matching: find.byType(Scrollable)).first,
+    );
+    await tester.drag(find.byType(SettleScreen), const Offset(0, -200));
+    await _settle(tester);
+    await tester.tap(find.text('Set your wallet'));
+    await _settle(tester);
+    expect(find.text('Where it landed'), findsOneWidget);
+    await tester.tap(find.text('Not tracked'));
+    await _settle(tester);
+    await tester.tap(find.text('Cash').last);
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await _settle(tester);
+
+    expect(find.text('Wallet saved.'), findsOneWidget);
+    expect(find.text('Into Cash · ${shortDate(DateTime.now())}'), findsOneWidget);
+    expect(find.text('Set your wallet'), findsNothing);
   });
 
   testWidgets('a new expense is paid with Cash unless you pick another wallet or none', (tester) async {

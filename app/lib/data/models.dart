@@ -860,17 +860,21 @@ class TalkState {
 }
 
 class PastTalk {
-  const PastTalk({required this.prompt, required this.lastAnsweredAt, required this.answers});
+  const PastTalk({required this.prompt, required this.lastAnsweredAt, required this.answers, this.hidden = const []});
 
   factory PastTalk.fromJson(Map<String, dynamic> j) => PastTalk(
     prompt: Prompt.fromJson(j['prompt'] as Map<String, dynamic>),
     lastAnsweredAt: _date(j['last_answered_at'])!,
     answers: [for (final a in j['answers'] as List) TalkAnswer.fromJson(a as Map<String, dynamic>)],
+    hidden: [for (final n in (j['hidden'] as List?) ?? const []) n as String],
   );
 
   final Prompt prompt;
   final DateTime lastAnsweredAt;
   final List<TalkAnswer> answers;
+
+  /// Who answered when you didn't; their answers stay private.
+  final List<String> hidden;
 }
 
 class Plan {

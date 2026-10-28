@@ -19,7 +19,7 @@ class Transaction extends Model
     /** Set by the server on transfers into goals; not a category people pick. */
     public const TRANSFER_CATEGORY = 'savings';
 
-    protected $fillable = ['user_id', 'goal_id', 'wallet_id', 'to_wallet_id', 'move_id', 'type', 'amount', 'category', 'title', 'payment_method', 'is_split', 'occurred_on'];
+    protected $fillable = ['user_id', 'goal_id', 'bill_id', 'wallet_id', 'to_wallet_id', 'move_id', 'type', 'amount', 'category', 'title', 'payment_method', 'is_split', 'occurred_on'];
 
     protected function casts(): array
     {

@@ -48,6 +48,7 @@ class TalkController extends Controller
     {
         $couple = $request->user()->couple;
         $current = ConversationPrompt::forWeek($couple);
+        $mine = $couple->answers()->where('user_id', $request->user()->id)->pluck('conversation_prompt_id')->flip();
 
         $past = $couple->answers()
             ->with('prompt', 'user:id,name')
@@ -57,10 +58,12 @@ class TalkController extends Controller
             ->limit(104)
             ->get()
             ->groupBy('conversation_prompt_id')
-            ->map(fn ($answers) => [
+            // As with this week's, a partner's answer stays private unless you answered too.
+            ->map(fn ($answers, $promptId) => [
                 'prompt' => $answers->first()->prompt,
                 'last_answered_at' => $answers->max('created_at'),
-                'answers' => $answers->values(),
+                'answers' => $mine->has($promptId) ? $answers->values() : [],
+                'hidden' => $mine->has($promptId) ? [] : $answers->pluck('user.name')->values(),
             ])
             ->values();
 

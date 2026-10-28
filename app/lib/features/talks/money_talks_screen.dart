@@ -238,6 +238,17 @@ class _PastTalkTile extends ConsumerWidget {
         title: Text(talk.prompt.question, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         subtitle: Text(longDate(talk.lastAnsweredAt), style: TextStyle(color: p.muted, fontSize: 12)),
         children: [
+          if (talk.hidden.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  "${talk.hidden.join(' and ')} answered. You didn't that week, so it stays private.",
+                  style: TextStyle(color: p.muted, height: 1.4),
+                ),
+              ),
+            ),
           for (final a in talk.answers)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),

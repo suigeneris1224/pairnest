@@ -541,6 +541,29 @@ class MockRepository implements PairnestRepository {
   });
 
   @override
+  Future<Settlement> setSettlementWallet(int id, int? walletId) => _delay(() {
+    final i = _settlements.indexWhere((s) => s.id == id);
+    if (i < 0) throw Exception('That settle-up is gone.');
+    final s = _settlements[i];
+    final w = walletId == null ? null : _wallets.where((w) => w.id == walletId).firstOrNull;
+    if (walletId != null && (w == null || w.isShared || w.ownerId != _user.id)) throw Exception('Pick one of your own wallets.');
+    final paid = s.fromId == _user.id;
+    return _settlements[i] = Settlement(
+      id: s.id,
+      fromId: s.fromId,
+      fromName: s.fromName,
+      toId: s.toId,
+      toName: s.toName,
+      amount: s.amount,
+      settledOn: s.settledOn,
+      fromWalletId: paid ? w?.id : s.fromWalletId,
+      fromWalletName: paid ? w?.name : s.fromWalletName,
+      toWalletId: paid ? s.toWalletId : w?.id,
+      toWalletName: paid ? s.toWalletName : w?.name,
+    );
+  });
+
+  @override
   Future<({Bill bill, int transactionId})> payBill(int id) async {
     final b = _bills[_billIndex(id)];
     final now = DateTime.now();
@@ -567,6 +590,7 @@ class MockRepository implements PairnestRepository {
 
   @override
   Future<Bill> unpayBill(int id, {required int transactionId, required DateTime previousDue}) => _delay(() {
+    _ensureNotPartners([_txns.where((t) => t.id == transactionId).firstOrNull?.walletId]);
     _txns.removeWhere((t) => t.id == transactionId);
     final i = _billIndex(id);
     return _bills[i] = _withDue(_bills[i], previousDue);
@@ -1134,11 +1158,18 @@ class MockRepository implements PairnestRepository {
   }
 
   @override
-  Future<List<PastTalk>> talkHistory() => _delay(
-    () => [
-      for (final p in _prompts.skip(1)) PastTalk(prompt: p, lastAnsweredAt: _pastTalkDates[p.id]!, answers: _answers[p.id] ?? const []),
-    ],
-  );
+  Future<List<PastTalk>> talkHistory() => _delay(() => [for (final p in _prompts.skip(1)) _pastTalk(p, _answers[p.id] ?? const [])]);
+
+  /// A partner's past answer stays private unless you answered too.
+  PastTalk _pastTalk(Prompt p, List<TalkAnswer> answers) {
+    final shared = answers.any((a) => a.userId == _user.id);
+    return PastTalk(
+      prompt: p,
+      lastAnsweredAt: _pastTalkDates[p.id]!,
+      answers: shared ? answers : const [],
+      hidden: shared ? const [] : [for (final a in answers) a.userName],
+    );
+  }
 
   @override
   Future<List<Plan>> plans() => _delay(

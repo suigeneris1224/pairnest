@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ConversationPrompt;
 use App\Models\Couple;
 use App\Models\User;
 use Database\Seeders\ConversationPromptSeeder;
@@ -1160,5 +1161,102 @@ class PairnestApiTest extends TestCase
         $this->deleteJson('/api/v1/me/avatar')->assertOk()->assertJsonPath('user.avatar_version', null);
         $this->get("/api/v1/members/{$alex->id}/avatar")->assertNotFound();
         $this->assertCount(0, Storage::disk('local')->allFiles('avatars'));
+    }
+
+    public function test_past_talk_answers_stay_private_unless_you_answered_too(): void
+    {
+        $this->seed(ConversationPromptSeeder::class);
+        [$couple, $alex, $sam] = $this->pair();
+        $current = ConversationPrompt::forWeek($couple);
+        [$both, $samOnly] = ConversationPrompt::where('id', '!=', $current->id)->orderBy('id')->take(2)->get()->all();
+        $couple->answers()->create(['conversation_prompt_id' => $both->id, 'user_id' => $alex->id, 'answer' => 'Save first']);
+        $couple->answers()->create(['conversation_prompt_id' => $both->id, 'user_id' => $sam->id, 'answer' => 'Spend a little']);
+        $couple->answers()->create(['conversation_prompt_id' => $samOnly->id, 'user_id' => $sam->id, 'answer' => 'My secret']);
+
+        Sanctum::actingAs($alex);
+        $history = collect($this->getJson('/api/v1/talks/history')->assertOk()->json())->keyBy('prompt.id');
+        $this->assertCount(2, $history[$both->id]['answers']);
+        $this->assertSame([], $history[$samOnly->id]['answers']);
+        $this->assertSame(['Sam'], $history[$samOnly->id]['hidden']);
+        $this->assertStringNotContainsString('My secret', $this->getJson('/api/v1/talks/history')->getContent());
+
+        Sanctum::actingAs($sam);
+        $history = collect($this->getJson('/api/v1/talks/history')->json())->keyBy('prompt.id');
+        $this->assertSame('My secret', $history[$samOnly->id]['answers'][0]['answer']);
+    }
+
+    public function test_deleting_a_goal_cannot_undo_savings_from_a_partners_own_wallet(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $goal = $this->postJson('/api/v1/goals', ['name' => 'Japan Trip', 'target_amount' => 80000])->json('id');
+        $alone = $this->postJson('/api/v1/goals', ['name' => 'Couch', 'target_amount' => 9000])->json('id');
+
+        Sanctum::actingAs($sam);
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 1000])->json('id');
+        $this->postJson("/api/v1/goals/{$goal}/contributions", ['amount' => 400, 'wallet_id' => $gcash])->assertCreated();
+
+        Sanctum::actingAs($alex);
+        $this->deleteJson("/api/v1/goals/{$goal}")->assertForbidden()
+            ->assertJsonPath('message', 'Sam saved toward this from their own wallet, so only Sam can delete it. You can cancel it instead.');
+        $this->postJson("/api/v1/goals/{$goal}/cancel")->assertOk();
+        $this->deleteJson("/api/v1/goals/{$alone}")->assertNoContent();
+
+        Sanctum::actingAs($sam);
+        $this->deleteJson("/api/v1/goals/{$goal}")->assertNoContent();
+        $this->assertSame(1000.0, (float) collect($this->getJson('/api/v1/wallets')->json())->firstWhere('id', $gcash)['balance']);
+    }
+
+    public function test_undoing_a_bill_payment_removes_only_that_payment(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $bill = $this->postJson('/api/v1/bills', [
+            'title' => 'Rent', 'amount' => 15000, 'category' => 'bills', 'next_due_on' => '2028-01-31',
+        ])->json('id');
+
+        Sanctum::actingAs($sam);
+        // Looks just like the bill's payment, but Sam logged it by hand.
+        $lookalike = $this->postJson('/api/v1/transactions', [
+            'type' => 'expense', 'amount' => 15000, 'category' => 'bills', 'title' => 'Rent', 'occurred_on' => '2028-01-31',
+        ])->json('id');
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 20000])->json('id');
+        $samPaid = $this->postJson("/api/v1/bills/{$bill}/pay", ['wallet_id' => $gcash])->assertCreated()->json('transaction.id');
+
+        Sanctum::actingAs($alex);
+        $this->postJson("/api/v1/bills/{$bill}/unpay", ['transaction_id' => $lookalike, 'next_due_on' => '2028-01-31'])
+            ->assertJsonValidationErrors('transaction_id');
+        // Sam paid from their own wallet, so it's Sam's to undo.
+        $this->postJson("/api/v1/bills/{$bill}/unpay", ['transaction_id' => $samPaid, 'next_due_on' => '2028-01-31'])->assertForbidden();
+
+        Sanctum::actingAs($sam);
+        $this->postJson("/api/v1/bills/{$bill}/unpay", ['transaction_id' => $samPaid, 'next_due_on' => '2028-01-31'])->assertOk();
+        $this->getJson('/api/v1/transactions')->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $lookalike);
+    }
+
+    public function test_each_partner_sets_their_own_side_of_a_settle_up(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        [, $other] = $this->pair();
+        Sanctum::actingAs($alex);
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 1000])->json('id');
+        $ours = $this->postJson('/api/v1/wallets', ['name' => 'Our Maya', 'kind' => 'ewallet', 'provider' => 'maya', 'is_shared' => true])->json('id');
+
+        Sanctum::actingAs($sam);
+        $bdo = $this->postJson('/api/v1/wallets', ['name' => 'BDO', 'kind' => 'bank', 'balance' => 5000])->json('id');
+        $id = $this->postJson('/api/v1/settlements', ['amount' => 500, 'from_user_id' => $sam->id, 'from_wallet_id' => $bdo])
+            ->assertCreated()->assertJsonPath('to_wallet_id', null)->json('id');
+
+        // Alex says where it landed; Sam's side is left as Sam set it.
+        Sanctum::actingAs($alex);
+        $this->patchJson("/api/v1/settlements/{$id}", ['wallet_id' => $bdo])->assertJsonValidationErrors('wallet_id');
+        $this->patchJson("/api/v1/settlements/{$id}", ['wallet_id' => $ours])->assertJsonValidationErrors('wallet_id');
+        $this->patchJson("/api/v1/settlements/{$id}", ['wallet_id' => $gcash])->assertOk()
+            ->assertJsonPath('to_wallet.name', 'GCash')->assertJsonPath('from_wallet_id', $bdo);
+        $this->assertSame(1500.0, (float) collect($this->getJson('/api/v1/wallets')->json())->firstWhere('id', $gcash)['balance']);
+        $this->patchJson("/api/v1/settlements/{$id}", ['wallet_id' => null])->assertOk()->assertJsonPath('to_wallet_id', null);
+
+        Sanctum::actingAs($other);
+        $this->patchJson("/api/v1/settlements/{$id}", ['wallet_id' => null])->assertNotFound();
     }
 }

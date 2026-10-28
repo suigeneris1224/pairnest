@@ -51,6 +51,22 @@ class SettlementController extends Controller
         return response()->json($settlement->load(Settlement::WITH), 201);
     }
 
+    /** Sets which of your wallets your side went through, e.g. on one your partner recorded. */
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $settlement = $request->user()->couple->settlements()->findOrFail($id);
+        $data = $request->validate(['wallet_id' => ['present', 'nullable', 'integer']]);
+        $me = $request->user()->id;
+        $field = match ($me) {
+            $settlement->from_user_id => 'from_wallet_id',
+            $settlement->to_user_id => 'to_wallet_id',
+            default => abort(403),
+        };
+        $settlement->update([$field => $this->ownWallet($request, $data['wallet_id'], $me, 'wallet_id')]);
+
+        return response()->json($settlement->load(Settlement::WITH));
+    }
+
     /**
      * $id when it's one of your own active wallets (not a shared one) on your
      * side of the settle-up, else a validation error. Your partner's wallets

@@ -69,6 +69,7 @@ class BillController extends Controller
         $transaction = DB::transaction(function () use ($request, $bill, $data, $wallet) {
             $transaction = $request->user()->couple->transactions()->create([
                 'user_id' => $request->user()->id,
+                'bill_id' => $bill->id,
                 'type' => 'expense',
                 'amount' => $bill->amount,
                 'category' => $bill->category,
@@ -104,10 +105,10 @@ class BillController extends Controller
         ]);
 
         $transaction = $couple->transactions()->find($data['transaction_id']);
-        if (! $transaction || $transaction->type !== 'expense' || $transaction->title !== $bill->title
-            || $transaction->category !== $bill->category || abs($transaction->amount - $bill->amount) >= 0.01) {
+        if (! $transaction || $transaction->bill_id !== $bill->id) {
             throw ValidationException::withMessages(['transaction_id' => "That isn't this bill's payment."]);
         }
+        Wallet::ensureNotPartners($couple, $request->user()->id, $transaction->wallet_id);
 
         DB::transaction(function () use ($bill, $transaction, $data) {
             $transaction->delete();

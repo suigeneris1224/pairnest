@@ -253,6 +253,11 @@ void main() {
     final paidBack = await sam.settleUp(amount: 50, fromUserId: samCash.ownerId!, fromWalletId: samCash.id);
     expect([paidBack.fromWalletName, paidBack.toWalletName], ['Cash', null]);
     expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4100);
+    // Alex says where it landed; only Alex's own wallets will do.
+    await expectLater(alex.setSettlementWallet(paidBack.id, samCash.id), throwsA(anything));
+    expect((await alex.setSettlementWallet(paidBack.id, gcash.id)).toWalletName, 'GCash');
+    expect((await alex.wallets()).firstWhere((w) => w.id == gcash.id).balance, 4150);
+    await alex.setSettlementWallet(paidBack.id, null);
     await expectLater(alex.deleteSettlement(paidBack.id), throwsA(anything));
     await sam.deleteSettlement(paidBack.id);
     // Paydays land in a wallet, bills are paid from one, goal savings come from one.

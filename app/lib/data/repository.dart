@@ -133,6 +133,9 @@ abstract class PairnestRepository {
   Future<Settlement> settleUp({required double amount, required int fromUserId, int? fromWalletId, int? toWalletId});
   Future<void> deleteSettlement(int id);
 
+  /// Sets which of your own wallets your side of a settle-up went through.
+  Future<Settlement> setSettlementWallet(int id, int? walletId);
+
   Future<List<Plan>> plans();
   Future<Plan> addPlan({required String kind, required String title, String? notes, DateTime? scheduledAt, int? goalId});
   Future<void> deletePlan(int id);

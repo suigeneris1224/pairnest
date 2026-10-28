@@ -51,7 +51,17 @@ class GoalController extends Controller
 
     public function destroy(Request $request, int $id): JsonResponse
     {
-        $request->user()->couple->goals()->findOrFail($id)->delete();
+        $couple = $request->user()->couple;
+        $goal = $couple->goals()->findOrFail($id);
+        // Deleting undoes the goal's transfers, so it can't reach into a partner's own wallets.
+        $owner = $couple->wallets()
+            ->whereIn('id', $couple->transactions()->where('goal_id', $goal->id)->whereNotNull('wallet_id')->select('wallet_id'))
+            ->whereNotNull('user_id')->where('user_id', '!=', $request->user()->id)
+            ->with('user:id,name')->first()?->user;
+        if ($owner) {
+            abort(403, "{$owner->name} saved toward this from their own wallet, so only {$owner->name} can delete it. You can cancel it instead.");
+        }
+        $goal->delete();
 
         return response()->json(null, 204);
     }

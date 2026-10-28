@@ -271,42 +271,111 @@ class _HistoryCard extends ConsumerWidget {
               children: [
                 for (final (i, s) in settlements.indexed) ...[
                   if (i > 0) Divider(height: 14, color: p.border),
-                  Row(
-                    children: [
-                      const PastelIcon(Icons.handshake_outlined, tone: Pastel.peach, size: 38),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${who(s.fromId, s.fromName)} paid ${whom(s.toId, s.toName)}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            Text(
-                              [
-                                // Each side tracks its own wallet, so often only one is known.
-                                if (s.fromWalletName != null && s.toWalletName != null)
-                                  '${s.fromWalletName} → ${s.toWalletName}'
-                                else if (s.fromWalletName != null)
-                                  'From ${s.fromWalletName}'
-                                else if (s.toWalletName != null)
-                                  'Into ${s.toWalletName}',
-                                shortDate(s.settledOn),
-                              ].join(' · '),
-                              style: TextStyle(color: p.muted, fontSize: 12),
-                            ),
-                          ],
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _setMyWallet(context, ref, s),
+                    child: Row(
+                      children: [
+                        const PastelIcon(Icons.handshake_outlined, tone: Pastel.peach, size: 38),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${who(s.fromId, s.fromName)} paid ${whom(s.toId, s.toName)}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                [
+                                  // Each side tracks its own wallet, so often only one is known.
+                                  if (s.fromWalletName != null && s.toWalletName != null)
+                                    '${s.fromWalletName} → ${s.toWalletName}'
+                                  else if (s.fromWalletName != null)
+                                    'From ${s.fromWalletName}'
+                                  else if (s.toWalletName != null)
+                                    'Into ${s.toWalletName}',
+                                  shortDate(s.settledOn),
+                                ].join(' · '),
+                                style: TextStyle(color: p.muted, fontSize: 12),
+                              ),
+                              if ((s.fromId == meId ? s.fromWalletId : s.toWalletId) == null)
+                                Text(
+                                  'Set your wallet',
+                                  style: TextStyle(color: p.primaryDeep, fontSize: 12, fontWeight: FontWeight.w600),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Text(hide ? '₱••••' : peso(s.amount), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ],
+                        Text(hide ? '₱••••' : peso(s.amount), style: const TextStyle(fontWeight: FontWeight.w700)),
+                      ],
+                    ),
                   ),
                 ],
               ],
             ),
     );
   }
+}
+
+/// Lets you say which of your own wallets your side of [s] went through,
+/// e.g. where money your partner recorded paying you landed.
+Future<void> _setMyWallet(BuildContext context, WidgetRef ref, Settlement s) async {
+  final paid = s.fromId == ref.read(meProvider).user.id;
+  final picked = await showModalBottomSheet<({int? walletId})>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    builder: (_) => _MyWalletSheet(paid: paid, initial: paid ? s.fromWalletId : s.toWalletId),
+  );
+  if (picked == null || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref.read(repositoryProvider).setSettlementWallet(s.id, picked.walletId);
+    invalidateMoney(ref);
+    showSnackOn(messenger, picked.walletId == null ? 'Wallet cleared.' : 'Wallet saved.');
+  } catch (e) {
+    showSnackOn(messenger, friendlyError(e));
+  }
+}
+
+class _MyWalletSheet extends StatefulWidget {
+  const _MyWalletSheet({required this.paid, required this.initial});
+
+  final bool paid;
+  final int? initial;
+
+  @override
+  State<_MyWalletSheet> createState() => _MyWalletSheetState();
+}
+
+class _MyWalletSheetState extends State<_MyWalletSheet> {
+  late int? _wallet = widget.initial;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SheetTitle(widget.paid ? 'Where it came from' : 'Where it landed'),
+          Text("Your side only. Your partner's wallets are theirs to track.", style: TextStyle(color: context.pn.muted, fontSize: 12.5)),
+          WalletDropdown(
+            label: widget.paid ? 'Paid from your wallet' : 'Received in your wallet',
+            personalOnly: true,
+            noneLabel: 'Not tracked',
+            value: _wallet,
+            onChanged: (id) => setState(() => _wallet = id),
+          ),
+          const SizedBox(height: 18),
+          FilledButton(onPressed: () => Navigator.pop(context, (walletId: _wallet)), child: const Text('Save')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ],
+      ),
+    ),
+  );
 }
 
 class _SettleSheet extends ConsumerStatefulWidget {

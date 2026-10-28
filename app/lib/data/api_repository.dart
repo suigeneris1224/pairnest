@@ -486,6 +486,12 @@ class ApiRepository implements PairnestRepository {
   @override
   Future<void> deleteSettlement(int id) => _call(() => _dio.delete('settlements/$id'));
 
+  @override
+  Future<Settlement> setSettlementWallet(int id, int? walletId) => _call(() async {
+    final res = await _dio.patch('settlements/$id', data: {'wallet_id': walletId});
+    return Settlement.fromJson(res.data as Map<String, dynamic>);
+  });
+
   static Map<String, dynamic> _billBody(BillDraft d) => {
     'title': d.title,
     'amount': d.amount,
