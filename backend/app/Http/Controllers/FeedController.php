@@ -6,6 +6,7 @@ use App\Models\GoalContribution;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * What your partner has been up to: the notification bell's feed.
@@ -65,6 +66,18 @@ class FeedController extends Controller
 
         foreach ($couple->settlements()->where('from_user_id', '!=', $me->id)->with('from:id,name')->latest()->limit(self::LIMIT)->get() as $s) {
             $items->push($this->item('settle', $s->from->name, "{$s->from->name} settled up with you", null, $s->amount, $s->created_at));
+        }
+
+        // New phones on either account, so a re-link is never silent.
+        $phones = PersonalAccessToken::query()
+            ->where('tokenable_type', $me->getMorphClass())
+            ->whereIn('tokenable_id', $couple->members()->select('id'))
+            ->where('name', AuthController::RELINK_TOKEN)
+            ->with('tokenable:id,name')
+            ->latest('id')->limit(self::LIMIT)->get();
+        foreach ($phones as $t) {
+            $whose = $t->tokenable_id === $me->id ? 'Your' : "{$t->tokenable->name}'s";
+            $items->push($this->item('device', $t->tokenable->name, "{$whose} account was linked to a new phone", 'Not you? Remove it in Settings, under Phones.', null, $t->created_at));
         }
 
         return response()->json($items->sortByDesc('at')->take(self::LIMIT)->values());

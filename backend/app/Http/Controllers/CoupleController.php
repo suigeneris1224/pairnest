@@ -7,6 +7,7 @@ use App\Models\Wallet;
 use App\Services\StarterGoals;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -23,10 +24,14 @@ class CoupleController extends Controller
         $this->ensureSingle($user->couple_id);
 
         $data = $request->validate(['theme' => ['sometimes', Rule::in(Couple::THEMES)]]);
-        $couple = Couple::create($data);
-        $user->couple()->associate($couple)->save();
-        StarterGoals::forNewNest($couple, $user);
-        Wallet::ensureCash($couple, $user);
+        $couple = DB::transaction(function () use ($data, $user) {
+            $couple = Couple::create($data);
+            $user->couple()->associate($couple)->save();
+            StarterGoals::forNewNest($couple, $user);
+            Wallet::ensureCash($couple, $user);
+
+            return $couple;
+        });
 
         return response()->json(['couple' => $couple->load('members')], 201);
     }
@@ -37,18 +42,22 @@ class CoupleController extends Controller
         $this->ensureSingle($user->couple_id);
 
         $data = $request->validate(['code' => ['required', 'string', 'size:6']]);
-        $couple = Couple::where('invite_code', strtoupper($data['code']))->first();
+        // Locked so two people joining at once can't both become the second partner.
+        $couple = DB::transaction(function () use ($data, $user) {
+            $couple = Couple::where('invite_code', strtoupper($data['code']))->lockForUpdate()->first();
+            if (! $couple) {
+                throw ValidationException::withMessages(['code' => 'We couldn\'t find a nest with that code.']);
+            }
+            if ($couple->members()->count() >= Couple::MAX_MEMBERS) {
+                throw ValidationException::withMessages(['code' => 'This nest already has two partners.']);
+            }
 
-        if (! $couple) {
-            throw ValidationException::withMessages(['code' => 'We couldn\'t find a nest with that code.']);
-        }
-        if ($couple->members()->count() >= Couple::MAX_MEMBERS) {
-            throw ValidationException::withMessages(['code' => 'This nest already has two partners.']);
-        }
+            $user->couple()->associate($couple)->save();
+            StarterGoals::addGoals($couple, $user);
+            Wallet::ensureCash($couple, $user);
 
-        $user->couple()->associate($couple)->save();
-        StarterGoals::addGoals($couple, $user);
-        Wallet::ensureCash($couple, $user);
+            return $couple;
+        });
 
         return response()->json(['couple' => $couple->load('members')]);
     }

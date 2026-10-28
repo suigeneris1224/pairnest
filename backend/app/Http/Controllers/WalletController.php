@@ -59,11 +59,12 @@ class WalletController extends Controller
     public function balance(Request $request, int $id): JsonResponse
     {
         $wallet = $this->editable($request, $id);
-        $data = $request->validate(['balance' => ['required', 'numeric', 'between:-9999999999,9999999999']]);
+        $data = $request->validate(['balance' => ['required', 'numeric', 'decimal:0,2', 'between:-9999999999,9999999999']]);
         $flows = Wallet::flows($wallet->couple_id);
         $wallet->update(['opening_balance' => round($data['balance'] - ($flows[$wallet->id] ?? 0), 2)]);
 
-        return $this->show($request, $wallet);
+        // The flows don't change with the opening balance.
+        return $this->show($request, $wallet, flows: $flows);
     }
 
     /** Deletes an unused wallet; one with history is archived so its transactions keep their label. */
@@ -85,10 +86,10 @@ class WalletController extends Controller
         return response()->json(null, 204);
     }
 
-    private function show(Request $request, Wallet $wallet, int $status = 200): JsonResponse
+    private function show(Request $request, Wallet $wallet, int $status = 200, ?array $flows = null): JsonResponse
     {
         return response()->json(
-            $wallet->load('user:id,name')->presentFor($request->user()->id, Wallet::flows($wallet->couple_id)),
+            $wallet->load('user:id,name')->presentFor($request->user()->id, $flows ?? Wallet::flows($wallet->couple_id)),
             $status,
         );
     }
@@ -114,7 +115,7 @@ class WalletController extends Controller
             'kind' => [$req, Rule::in(Wallet::KINDS)],
             'provider' => ['sometimes', Rule::in(Wallet::PROVIDERS)],
             'last4' => ['sometimes', 'nullable', 'digits:4'],
-            'balance' => ['sometimes', 'numeric', 'between:-9999999999,9999999999'],
+            'balance' => ['sometimes', 'numeric', 'decimal:0,2', 'between:-9999999999,9999999999'],
             'is_shared' => ['sometimes', 'boolean'],
             'show_balance_to_partner' => ['sometimes', 'boolean'],
         ]);

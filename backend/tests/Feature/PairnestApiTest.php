@@ -7,6 +7,7 @@ use App\Models\User;
 use Database\Seeders\ConversationPromptSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -105,7 +106,7 @@ class PairnestApiTest extends TestCase
         $this->as('')->postJson('/api/v1/auth/recover', ['recovery_key' => $fresh])->assertOk();
     }
 
-    public function test_a_partner_can_relink_a_lost_phone_once(): void
+    public function test_a_partner_can_relink_a_new_phone_once_without_signing_the_old_one_out(): void
     {
         [$alexToken] = $this->start('Alex');
         $code = $this->as($alexToken)->postJson('/api/v1/couple')->json('couple.invite_code');
@@ -126,10 +127,49 @@ class PairnestApiTest extends TestCase
             ->assertJsonPath('user.name', 'Alex')
             ->assertJsonPath('user.couple.invite_code', $code)
             ->json('token');
-        $this->as($alexToken)->getJson('/api/v1/auth/me')->assertUnauthorized();
+        $this->assertStringStartsWith('pn_', explode('|', $newToken)[1]);
         $this->as($newToken)->getJson('/api/v1/dashboard')->assertOk();
-
         $this->as('')->postJson('/api/v1/auth/relink/redeem', ['code' => $relink])->assertUnprocessable();
+
+        // A partner holding the code can't lock Alex out: the old phone stays in,
+        // both see the new phone in the feed, and Alex can remove it.
+        $this->as($alexToken)->getJson('/api/v1/auth/me')->assertOk();
+        $phones = $this->as($alexToken)->getJson('/api/v1/auth/devices')
+            ->assertOk()->assertJsonCount(2)
+            ->assertJsonPath('0.relinked', true)->assertJsonPath('0.current', false)
+            ->assertJsonPath('1.current', true)
+            ->json();
+        $this->as($alexToken)->getJson('/api/v1/feed')
+            ->assertJsonPath('0.type', 'device')->assertJsonPath('0.title', 'Your account was linked to a new phone');
+        $this->as($samToken)->getJson('/api/v1/feed')->assertJsonPath('0.title', "Alex's account was linked to a new phone");
+
+        $samPhone = $this->as($samToken)->getJson('/api/v1/auth/devices')->json('0.id');
+        $this->as($alexToken)->deleteJson("/api/v1/auth/devices/{$samPhone}")->assertNotFound();
+        $this->as($alexToken)->deleteJson("/api/v1/auth/devices/{$phones[0]['id']}")->assertNoContent();
+        $this->as($newToken)->getJson('/api/v1/auth/me')->assertUnauthorized();
+        $this->as($samToken)->getJson('/api/v1/auth/me')->assertOk();
+    }
+
+    public function test_phones_stay_signed_in_while_used_and_expire_when_not(): void
+    {
+        [$token] = $this->start('Alex');
+        $row = \Laravel\Sanctum\PersonalAccessToken::findToken($token);
+        $this->assertEqualsWithDelta(now()->addDays(60)->timestamp, $row->expires_at->timestamp, 5);
+
+        // Used again after a month: good for another 60 days.
+        $this->travel(31)->days();
+        $this->as($token)->getJson('/api/v1/auth/me')->assertOk();
+        $this->assertEqualsWithDelta(now()->addDays(60)->timestamp, $row->fresh()->expires_at->timestamp, 5);
+
+        $this->travel(61)->days();
+        $this->as($token)->getJson('/api/v1/auth/me')->assertUnauthorized();
+    }
+
+    public function test_onboarding_takes_only_the_known_profile_answers(): void
+    {
+        $this->postJson('/api/v1/auth/start', ['name' => 'Alex', 'profile' => ['stage' => 'dating', 'notes' => str_repeat('x', 5000)]])
+            ->assertUnprocessable()->assertJsonValidationErrors('profile');
+        $this->postJson('/api/v1/auth/start', ['name' => 'Alex', 'profile' => ['stage' => 'dating']])->assertCreated();
     }
 
     public function test_couple_routes_require_a_nest(): void
@@ -492,8 +532,9 @@ class PairnestApiTest extends TestCase
             ->assertJsonPath('1.balance', null);
         $txn(['amount' => 100, 'wallet_id' => $gcash])->assertUnprocessable()->assertJsonValidationErrors('wallet_id');
         $txn(['amount' => 400, 'wallet_id' => $ours])->assertCreated();
-        // Logging for Alex may use Alex's wallet.
-        $txn(['amount' => 100, 'wallet_id' => $gcash, 'user_id' => $alex->id])->assertCreated();
+        // Logging for Alex is fine, but Alex's own wallets are Alex's to log.
+        $txn(['amount' => 100, 'wallet_id' => $gcash, 'user_id' => $alex->id])->assertUnprocessable()->assertJsonValidationErrors('wallet_id');
+        $txn(['amount' => 100, 'wallet_id' => $ours, 'user_id' => $alex->id])->assertCreated();
         $this->patchJson("/api/v1/wallets/{$gcash}", ['name' => 'Mine now'])
             ->assertForbidden()->assertJsonPath('message', "Only Alex can change Alex's wallet.");
         $this->postJson("/api/v1/wallets/{$ours}/balance", ['balance' => 1500])->assertOk();
@@ -501,7 +542,58 @@ class PairnestApiTest extends TestCase
         Sanctum::actingAs($alex);
         $this->patchJson("/api/v1/wallets/{$gcash}", ['show_balance_to_partner' => true, 'name' => 'GCash'])->assertOk();
         Sanctum::actingAs($sam);
-        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 5900)->assertJsonPath('0.balance', 1500);
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 6000)->assertJsonPath('0.balance', 1500);
+    }
+
+    public function test_only_the_owner_changes_entries_on_a_personal_wallet(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        $txn = ['type' => 'expense', 'amount' => 300, 'category' => 'food', 'title' => 'Lunch', 'occurred_on' => '2028-03-05'];
+        Sanctum::actingAs($alex);
+        $gcash = $this->postJson('/api/v1/wallets', ['name' => 'GCash', 'kind' => 'ewallet', 'provider' => 'gcash', 'balance' => 1000])->json('id');
+        $ours = $this->postJson('/api/v1/wallets', ['name' => 'Our Maya', 'kind' => 'ewallet', 'provider' => 'maya', 'is_shared' => true])->json('id');
+        $mine = $this->postJson('/api/v1/transactions', $txn + ['wallet_id' => $gcash])->assertCreated()->json('id');
+        $shared = $this->postJson('/api/v1/transactions', $txn + ['wallet_id' => $ours])->json('id');
+        $plain = $this->postJson('/api/v1/transactions', $txn)->json('id');
+
+        Sanctum::actingAs($sam);
+        $message = 'Only Alex can change entries on their own wallets.';
+        $this->postJson('/api/v1/transactions', $txn + ['user_id' => $alex->id, 'wallet_id' => $gcash])->assertUnprocessable();
+        $this->patchJson("/api/v1/transactions/{$mine}", ['amount' => 1])->assertForbidden()->assertJsonPath('message', $message);
+        $this->patchJson("/api/v1/transactions/{$mine}", ['wallet_id' => null])->assertForbidden();
+        $this->deleteJson("/api/v1/transactions/{$mine}")->assertForbidden();
+        // Moving Alex's wallet entry onto Sam isn't a way around it either.
+        $this->patchJson("/api/v1/transactions/{$plain}", ['wallet_id' => $gcash])->assertUnprocessable();
+        // Shared wallets and entries without a wallet stay open to both.
+        $this->patchJson("/api/v1/transactions/{$shared}", ['amount' => 200])->assertOk();
+        $this->patchJson("/api/v1/transactions/{$plain}", ['user_id' => $sam->id])->assertOk();
+
+        Sanctum::actingAs($alex);
+        // A new payer must be able to use the wallet the entry keeps.
+        $this->patchJson("/api/v1/transactions/{$mine}", ['user_id' => $sam->id])->assertUnprocessable()->assertJsonValidationErrors('wallet_id');
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 700);
+        $this->deleteJson("/api/v1/transactions/{$mine}")->assertNoContent();
+    }
+
+    public function test_searching_for_a_percent_sign_matches_it_literally(): void
+    {
+        [, $alex] = $this->pair();
+        Sanctum::actingAs($alex);
+        $txn = ['type' => 'expense', 'amount' => 10, 'category' => 'food', 'occurred_on' => '2028-03-05'];
+        $this->postJson('/api/v1/transactions', $txn + ['title' => '50% off pizza']);
+        $this->postJson('/api/v1/transactions', $txn + ['title' => '500 pesos load']);
+        $this->getJson('/api/v1/transactions?q='.urlencode('50%'))->assertJsonCount(1, 'data')->assertJsonPath('data.0.title', '50% off pizza');
+        $this->getJson('/api/v1/transactions?q=_')->assertJsonCount(0, 'data');
+    }
+
+    public function test_money_has_at_most_two_decimals_and_dates_stay_sensible(): void
+    {
+        [, $alex] = $this->pair();
+        Sanctum::actingAs($alex);
+        $txn = ['type' => 'expense', 'category' => 'food', 'title' => 'T', 'occurred_on' => '2028-03-05'];
+        $this->postJson('/api/v1/transactions', $txn + ['amount' => 10.555])->assertJsonValidationErrors('amount');
+        $this->postJson('/api/v1/transactions', $txn + ['amount' => 10.5])->assertCreated();
+        $this->postJson('/api/v1/transactions', ['amount' => 10, 'occurred_on' => '0001-01-01'] + $txn)->assertJsonValidationErrors('occurred_on');
     }
 
     public function test_moving_money_between_wallets_is_not_spending(): void
@@ -612,33 +704,88 @@ class PairnestApiTest extends TestCase
         Sanctum::actingAs($sam);
         $bpi = $this->postJson('/api/v1/wallets', ['name' => 'BPI', 'kind' => 'bank', 'provider' => 'bpi', 'balance' => 1000])->json('id');
 
-        // Sam pays Alex back from BPI into Alex's GCash.
+        // Sam pays Alex back from BPI; only Alex could say where it landed.
         $wrong = ['amount' => 415, 'from_user_id' => $sam->id];
         $this->postJson('/api/v1/settlements', $wrong + ['from_wallet_id' => $gcash])
             ->assertUnprocessable()->assertJsonPath('errors.from_wallet_id.0', 'Pick one of your own wallets.');
-        $this->postJson('/api/v1/settlements', $wrong + ['to_wallet_id' => $bpi])
-            ->assertUnprocessable()->assertJsonPath('errors.to_wallet_id.0', "Pick one of Alex's own wallets.");
-        $this->postJson('/api/v1/settlements', $wrong + ['to_wallet_id' => $ours])->assertUnprocessable();
-        $id = $this->postJson('/api/v1/settlements', $wrong + ['from_wallet_id' => $bpi, 'to_wallet_id' => $gcash])
+        $this->postJson('/api/v1/settlements', $wrong + ['from_wallet_id' => $ours])->assertUnprocessable();
+        $this->postJson('/api/v1/settlements', $wrong + ['to_wallet_id' => $gcash])
+            ->assertUnprocessable()->assertJsonPath('errors.to_wallet_id.0', 'Only your partner can pick their wallet.');
+        $id = $this->postJson('/api/v1/settlements', $wrong + ['from_wallet_id' => $bpi])
             ->assertCreated()
             ->assertJsonPath('from_wallet.name', 'BPI')
-            ->assertJsonPath('to_wallet.name', 'GCash')
+            ->assertJsonPath('to_wallet', null)
             ->json('id');
         $this->getJson('/api/v1/balance')
             ->assertJsonPath('owes', null)
-            ->assertJsonPath('settlements.0.to_wallet.name', 'GCash');
+            ->assertJsonPath('settlements.0.from_wallet.name', 'BPI');
         $this->getJson('/api/v1/wallets')->assertJsonPath('2.balance', 585);
 
         Sanctum::actingAs($alex);
-        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 2415);
-        // A wallet a settle-up landed in is archived, not deleted.
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 2000);
+        // Only Sam can undo a settle-up that moved money out of Sam's BPI.
+        $this->deleteJson("/api/v1/settlements/{$id}")->assertForbidden();
+        // Alex paying Sam back can name Alex's own wallet.
+        $back = $this->postJson('/api/v1/settlements', ['amount' => 100, 'from_user_id' => $alex->id, 'from_wallet_id' => $gcash])
+            ->assertCreated()->json('id');
+        $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 1900);
+        // A wallet a settle-up came out of is archived, not deleted.
         $this->deleteJson("/api/v1/wallets/{$gcash}")->assertNoContent();
         $this->assertDatabaseHas('wallets', ['id' => $gcash]);
+        $this->deleteJson("/api/v1/settlements/{$back}")->assertNoContent();
 
         // Undoing puts BPI back.
-        $this->deleteJson("/api/v1/settlements/{$id}")->assertNoContent();
         Sanctum::actingAs($sam);
+        $this->deleteJson("/api/v1/settlements/{$id}")->assertNoContent();
         $this->getJson('/api/v1/wallets')->assertJsonPath('1.balance', 1000);
+    }
+
+    public function test_joining_is_limited_per_phone_network(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            [$token] = $this->start("Guess {$i}");
+            $this->as($token)->postJson('/api/v1/couple/join', ['code' => 'ZZZZZ'.$i])->assertUnprocessable();
+        }
+        [$token] = $this->start('Guess 6');
+        $this->as($token)->postJson('/api/v1/couple/join', ['code' => 'ZZZZZZ'])->assertStatus(429);
+    }
+
+    public function test_wallets_and_the_dashboard_take_a_fixed_number_of_queries(): void
+    {
+        [, $alex, $sam] = $this->pair();
+        Sanctum::actingAs($alex);
+        $txn = ['type' => 'expense', 'amount' => 10, 'category' => 'food', 'title' => 'T', 'occurred_on' => now()->toDateString()];
+        $count = function (string $url): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->getJson($url)->assertOk();
+            DB::disableQueryLog();
+
+            return count(DB::getQueryLog());
+        };
+        $wallet = fn ($name) => $this->postJson('/api/v1/wallets', ['name' => $name, 'kind' => 'ewallet', 'provider' => 'gcash'])->json('id');
+        $this->postJson('/api/v1/transactions', $txn + ['wallet_id' => $wallet('A')]);
+        $few = [$count('/api/v1/wallets'), $count('/api/v1/dashboard')];
+
+        foreach (range(1, 6) as $i) {
+            $this->postJson('/api/v1/transactions', $txn + ['wallet_id' => $wallet("W{$i}")]);
+        }
+        Sanctum::actingAs($sam);
+        $this->postJson('/api/v1/transactions', $txn);
+        Sanctum::actingAs($alex);
+
+        // More wallets and entries, same queries: nothing runs per row.
+        $this->assertSame($few, [$count('/api/v1/wallets'), $count('/api/v1/dashboard')]);
+        $this->assertLessThanOrEqual(8, $few[0]);
+        $this->assertLessThanOrEqual(20, $few[1]);
+    }
+
+    public function test_huge_photos_are_refused_before_decoding(): void
+    {
+        [, $alex] = $this->pair();
+        Sanctum::actingAs($alex);
+        $this->postJson('/api/v1/me/avatar', ['photo' => UploadedFile::fake()->image('big.png', 7000, 100)])
+            ->assertUnprocessable()->assertJsonValidationErrors('photo');
     }
 
     public function test_spending_from_a_shared_wallet_is_not_owed_between_partners(): void

@@ -53,6 +53,8 @@ class TalkController extends Controller
             ->with('prompt', 'user:id,name')
             ->when($current, fn ($q) => $q->where('conversation_prompt_id', '!=', $current->id))
             ->latest()
+            // About a year of weeks, both partners.
+            ->limit(104)
             ->get()
             ->groupBy('conversation_prompt_id')
             ->map(fn ($answers) => [

@@ -57,7 +57,7 @@ class PaydayController extends Controller
     {
         $payday = $this->owned($request, $id);
         $data = $request->validate([
-            'amount' => ['sometimes', 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => ['sometimes', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'payment_method' => ['sometimes', Rule::in(Transaction::PAYMENT_METHODS)],
         ]);
 
@@ -93,7 +93,7 @@ class PaydayController extends Controller
         $payday = $this->owned($request, $id);
         $data = $request->validate([
             'transaction_id' => ['required', 'integer'],
-            'next_on' => ['required', 'date_format:Y-m-d'],
+            'next_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
         ]);
 
         $transaction = $request->user()->couple->transactions()->find($data['transaction_id']);
@@ -163,11 +163,11 @@ class PaydayController extends Controller
 
         return $request->validate([
             'title' => ['sometimes', 'string', 'max:120'],
-            'amount' => [$req, 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => [$req, 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'frequency' => [$req, Rule::in(Payday::FREQUENCIES)],
             'days' => ['sometimes', 'array', 'max:2'],
             'days.*' => ['integer', 'between:1,31'],
-            'next_on' => ['sometimes', 'date_format:Y-m-d'],
+            'next_on' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
             'is_split' => ['sometimes', 'boolean'],
             'wallet_id' => ['sometimes', 'nullable', 'integer'],
         ]);

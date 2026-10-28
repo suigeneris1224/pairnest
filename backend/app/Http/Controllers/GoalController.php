@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Goal;
+use App\Models\GoalContribution;
 use App\Models\Transaction;
 use App\Models\Wallet;
 use Carbon\CarbonImmutable;
@@ -13,16 +14,22 @@ use Illuminate\Http\Request;
 
 class GoalController extends Controller
 {
+    private const LIMIT = 200;
+
     public function index(Request $request): JsonResponse
     {
         $goals = $request->user()->couple->goals()
             ->withSum('contributions as saved', 'amount')
-            ->with('contributions.user:id,name')
             // Active goals first; cancelled ones sink to the bottom.
             ->orderByRaw('cancelled_at is not null')
             ->latest()
-            ->get()
-            ->map(fn (Goal $goal) => $this->present($goal));
+            ->limit(self::LIMIT)
+            ->get();
+        // Who saved toward each goal, in one query rather than every contribution.
+        $contributors = GoalContribution::whereIn('goal_id', $goals->pluck('id'))
+            ->distinct()->get(['goal_id', 'user_id'])
+            ->groupBy('goal_id')->map(fn ($rows) => $rows->pluck('user_id')->values());
+        $goals = $goals->map(fn (Goal $goal) => $this->present($goal, $contributors->get($goal->id, collect())));
 
         return response()->json($goals);
     }
@@ -53,7 +60,7 @@ class GoalController extends Controller
     {
         $goal = $request->user()->couple->goals()->findOrFail($id);
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'wallet_id' => ['sometimes', 'nullable', 'integer'],
         ]);
         if ($goal->cancelled_at) {
@@ -130,16 +137,14 @@ class GoalController extends Controller
         return response()->json($this->present($goal->loadSum('contributions as saved', 'amount')));
     }
 
-    private function present(Goal $goal): array
+    private function present(Goal $goal, ?\Illuminate\Support\Collection $contributorIds = null): array
     {
         $saved = (float) ($goal->saved ?? 0);
 
         return array_merge($goal->toArray(), [
             'saved' => $saved,
             'percent' => $goal->target_amount > 0 ? min(100, (int) round($saved / $goal->target_amount * 100)) : 0,
-            'contributor_ids' => $goal->relationLoaded('contributions')
-                ? $goal->contributions->pluck('user_id')->unique()->values()
-                : $goal->contributions()->distinct()->pluck('user_id'),
+            'contributor_ids' => $contributorIds ?? $goal->contributions()->distinct()->pluck('user_id'),
         ]);
     }
 
@@ -151,8 +156,8 @@ class GoalController extends Controller
             'name' => [$req, 'string', 'max:80'],
             'subtitle' => ['nullable', 'string', 'max:120'],
             'icon' => ['sometimes', 'string', 'max:30'],
-            'target_amount' => [$req, 'numeric', 'gt:0', 'max:9999999999'],
-            'target_date' => ['nullable', 'date_format:Y-m-d'],
+            'target_amount' => [$req, 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
+            'target_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
         ]);
     }
 }

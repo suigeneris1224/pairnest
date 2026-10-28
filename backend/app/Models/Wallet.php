@@ -124,6 +124,21 @@ class Wallet extends Model
     }
 
     /**
+     * Refuses when any of $ids is a partner's personal wallet: only its owner
+     * changes what goes in or out of it, even when logging for the other.
+     */
+    public static function ensureNotPartners(Couple $couple, int $actorId, ?int ...$ids): void
+    {
+        $owner = $couple->wallets()
+            ->whereIn('id', array_filter($ids))
+            ->whereNotNull('user_id')->where('user_id', '!=', $actorId)
+            ->with('user:id,name')->first()?->user;
+        if ($owner) {
+            abort(403, "Only {$owner->name} can change entries on their own wallets.");
+        }
+    }
+
+    /**
      * The wallet to log with: $id when $userId may still use it, else null.
      * For remembered links (a bill's or payday's wallet) that may have been
      * archived since, or belong to the other partner.

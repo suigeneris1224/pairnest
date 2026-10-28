@@ -17,6 +17,7 @@ use App\Http\Controllers\SettlementController;
 use App\Http\Controllers\TalkController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Middleware\EnsureCouple;
+use App\Http\Middleware\ExtendToken;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -29,17 +30,20 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/relink/redeem', [AuthController::class, 'redeemRelink']);
     });
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', ExtendToken::class, 'throttle:api'])->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::post('auth/recovery-key', [AuthController::class, 'recoveryKey']);
-        Route::post('me/avatar', [AvatarController::class, 'store']);
+        Route::get('auth/devices', [AuthController::class, 'devices']);
+        Route::delete('auth/devices/{id}', [AuthController::class, 'removeDevice'])->whereNumber('id');
+        Route::post('me/avatar', [AvatarController::class, 'store'])->middleware('throttle:avatar');
         Route::delete('me/avatar', [AvatarController::class, 'destroy']);
         Route::get('members/{id}/avatar', [AvatarController::class, 'show'])->whereNumber('id');
 
         Route::get('couple', [CoupleController::class, 'show']);
         Route::post('couple', [CoupleController::class, 'store']);
-        Route::post('couple/join', [CoupleController::class, 'join'])->middleware('throttle:10,1');
+        // Per account and per IP, since onboarding hands out new accounts.
+        Route::post('couple/join', [CoupleController::class, 'join'])->middleware('throttle:couple-join');
 
         Route::middleware(EnsureCouple::class)->group(function () {
             Route::patch('couple', [CoupleController::class, 'update']);

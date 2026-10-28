@@ -7,6 +7,7 @@ use App\Services\StarterGoals;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -14,16 +15,25 @@ use Illuminate\Validation\ValidationException;
  * Anonymous accounts. Onboarding creates one (a token on the phone plus a
  * recovery key shown once); a new phone gets back in with that key or a
  * one-time re-link code from the partner's phone. No email, no password.
+ *
+ * Each phone is a token that lasts TOKEN_DAYS from its last use. A recovery
+ * key signs every other phone out (whoever holds the key owns the account);
+ * a re-link code only adds a phone, which both partners see in the feed and
+ * the owner can remove, so a partner can't quietly take the account over.
  */
 class AuthController extends Controller
 {
     private const RELINK_MINUTES = 10;
 
+    public const TOKEN_DAYS = 60;
+
+    public const RELINK_TOKEN = 'relink';
+
     public function start(Request $request): JsonResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:40'],
-            'profile' => ['sometimes', 'array'],
+            'profile' => ['sometimes', 'array:partner_name,stage,financial_goals,family_goals,money_style,monthly_budget'],
             'profile.partner_name' => ['nullable', 'string', 'max:40'],
             'profile.stage' => ['nullable', Rule::in(User::STAGES)],
             'profile.financial_goals' => ['sometimes', 'array', 'max:8'],
@@ -31,7 +41,7 @@ class AuthController extends Controller
             'profile.family_goals' => ['sometimes', 'array', 'max:5'],
             'profile.family_goals.*' => [Rule::in(StarterGoals::FAMILY)],
             'profile.money_style' => ['nullable', Rule::in(User::MONEY_STYLES)],
-            'profile.monthly_budget' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'profile.monthly_budget' => ['nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999'],
         ]);
 
         $user = User::create(['name' => trim($data['name']), 'profile' => $data['profile'] ?? null]);
@@ -49,9 +59,13 @@ class AuthController extends Controller
         }
 
         // The lost phone loses access.
-        $user->tokens()->delete();
+        $session = DB::transaction(function () use ($user) {
+            $user->tokens()->delete();
 
-        return response()->json($this->session($user));
+            return $this->session($user, 'recover');
+        });
+
+        return response()->json($session);
     }
 
     /** Called on the partner's phone: a short code that signs their partner back in. */
@@ -84,9 +98,30 @@ class AuthController extends Controller
             throw ValidationException::withMessages(['code' => 'That code has expired or was already used. Ask your partner for a new one.']);
         }
 
-        $user->tokens()->delete();
+        // Adds a phone; the others stay signed in.
+        return response()->json($this->session($user, self::RELINK_TOKEN));
+    }
 
-        return response()->json($this->session($user));
+    /** The phones signed in to your account. */
+    public function devices(Request $request): JsonResponse
+    {
+        $current = $request->user()->currentAccessToken()->id;
+
+        return response()->json($request->user()->tokens()->latest('id')->get()->map(fn ($t) => [
+            'id' => $t->id,
+            'relinked' => $t->name === self::RELINK_TOKEN,
+            'current' => $t->id === $current,
+            'created_at' => $t->created_at?->toIso8601ZuluString(),
+            'last_used_at' => $t->last_used_at?->toIso8601ZuluString(),
+        ]));
+    }
+
+    /** Signs one of your phones out. */
+    public function removeDevice(Request $request, int $id): JsonResponse
+    {
+        $request->user()->tokens()->findOrFail($id)->delete();
+
+        return response()->json(null, 204);
     }
 
     /** A fresh recovery key; the old one stops working. */
@@ -108,10 +143,10 @@ class AuthController extends Controller
         return response()->json(['user' => $request->user()->load('couple.members')]);
     }
 
-    private function session(User $user): array
+    private function session(User $user, string $name = 'pairnest'): array
     {
         return [
-            'token' => $user->createToken('pairnest')->plainTextToken,
+            'token' => $user->createToken($name, ['*'], now()->addDays(self::TOKEN_DAYS))->plainTextToken,
             'user' => $user->load('couple.members'),
         ];
     }

@@ -100,7 +100,7 @@ class BillController extends Controller
         $bill = $couple->bills()->findOrFail($id);
         $data = $request->validate([
             'transaction_id' => ['required', 'integer'],
-            'next_due_on' => ['required', 'date_format:Y-m-d'],
+            'next_due_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
         ]);
 
         $transaction = $couple->transactions()->find($data['transaction_id']);
@@ -131,10 +131,10 @@ class BillController extends Controller
 
         return $request->validate([
             'title' => [$req, 'string', 'max:120'],
-            'amount' => [$req, 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => [$req, 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'category' => [$req, Rule::in(array_diff(Transaction::CATEGORIES, ['income']))],
             'frequency' => ['sometimes', Rule::in(Bill::FREQUENCIES)],
-            'next_due_on' => [$req, 'date_format:Y-m-d'],
+            'next_due_on' => [$req, 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
             'is_split' => ['sometimes', 'boolean'],
             'wallet_id' => ['sometimes', 'nullable', 'integer'],
         ]);

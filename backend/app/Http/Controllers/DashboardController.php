@@ -13,19 +13,19 @@ class DashboardController extends Controller
     {
         $couple = $request->user()->couple->load('members');
         $now = CarbonImmutable::now();
+        $spending = BudgetSummary::spentByCategory($couple, $now);
+        // Money moved into goals this month; savings, not spending.
+        // Releases from cancelled goals give savings back.
+        $saved = (float) $couple->transactions()->whereIn('type', ['transfer', 'release'])->inMonth($now)
+            ->selectRaw("sum(case when type = 'transfer' then amount else -amount end) as net")
+            ->value('net');
 
         return response()->json([
             'couple' => $couple,
-            'budget' => BudgetSummary::for($couple, $now),
+            'budget' => BudgetSummary::for($couple, $now, $spending),
             // Every expense category this month (budgeted or not), for the donut.
-            'spending' => (object) BudgetSummary::spentByCategory($couple, $now)->all(),
-            // Money moved into goals this month; savings, not spending.
-            // Releases from cancelled goals give savings back.
-            'saved_this_month' => max(0, round(
-                (float) $couple->transactions()->where('type', 'transfer')->where('occurred_on', 'like', $now->format('Y-m').'-%')->sum('amount')
-                - (float) $couple->transactions()->where('type', 'release')->where('occurred_on', 'like', $now->format('Y-m').'-%')->sum('amount'),
-                2,
-            )),
+            'spending' => (object) $spending->all(),
+            'saved_this_month' => max(0, round($saved, 2)),
             'last_month_spent' => round(BudgetSummary::spentByCategory($couple, $now->subMonthNoOverflow())->sum(), 2),
             // Overdue bills and those due in the next two weeks, soonest first.
             'upcoming_bills' => $couple->bills()->with('user:id,name')

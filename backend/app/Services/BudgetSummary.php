@@ -10,12 +10,13 @@ class BudgetSummary
 {
     /**
      * Budget vs. actual expenses for one month, overall and per category.
+     * Pass $spentByCategory when it's already been worked out for the month.
      */
-    public static function for(Couple $couple, CarbonImmutable $month): array
+    public static function for(Couple $couple, CarbonImmutable $month, ?Collection $spentByCategory = null): array
     {
         $start = $month->startOfMonth();
         $budget = $couple->budgets()->with('lines')->whereDate('month', $start->toDateString())->first();
-        $spentByCategory = static::spentByCategory($couple, $start);
+        $spentByCategory ??= static::spentByCategory($couple, $start);
 
         $total = $budget?->total ?? 0.0;
         $spent = round($spentByCategory->sum(), 2);
@@ -53,7 +54,7 @@ class BudgetSummary
 
         return $couple->transactions()
             ->where('type', 'expense')
-            ->whereBetween('occurred_on', [$start->toDateString(), $start->endOfMonth()->toDateString()])
+            ->inMonth($start)
             ->selectRaw('category, SUM(amount) as spent')
             ->groupBy('category')
             ->pluck('spent', 'category')

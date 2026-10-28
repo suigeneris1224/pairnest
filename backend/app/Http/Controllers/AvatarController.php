@@ -23,7 +23,8 @@ class AvatarController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $request->validate(['photo' => ['required', 'image', 'mimes:jpeg,png,webp', 'max:8192']]);
+        // Pixel limits too: a small file can still decode into a huge image.
+        $request->validate(['photo' => ['required', 'image', 'mimes:jpeg,png,webp', 'max:8192', 'dimensions:max_width=6000,max_height=6000']]);
         $file = $request->file('photo');
 
         $jpeg = $this->normalise($file->getRealPath(), $file->getMimeType());
@@ -31,10 +32,11 @@ class AvatarController extends Controller
         Storage::disk('local')->put($path, $jpeg);
 
         $user = $request->user();
-        if ($user->avatar_path) {
-            Storage::disk('local')->delete($user->avatar_path);
-        }
+        $old = $user->avatar_path;
         $user->forceFill(['avatar_path' => $path, 'avatar_updated_at' => now()])->save();
+        if ($old) {
+            Storage::disk('local')->delete($old);
+        }
 
         return response()->json(['user' => $user->load('couple.members')]);
     }

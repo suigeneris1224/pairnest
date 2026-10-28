@@ -34,10 +34,11 @@ class TransactionController extends Controller
             ->latest('occurred_on')->latest('id');
 
         if ($month = $filters['month'] ?? null) {
-            $query->where('occurred_on', 'like', $month.'-%');
+            $query->inMonth(CarbonImmutable::createFromFormat('!Y-m', $month));
         }
         if ($q = $filters['q'] ?? null) {
-            $query->where('title', 'like', '%'.addcslashes($q, '%_\\').'%');
+            // SQLite has no default LIKE escape character.
+            $query->whereRaw("title like ? escape '\'", ['%'.addcslashes($q, '%_\\').'%']);
         }
         if ($type = $filters['type'] ?? null) {
             $query->where('type', $type);
@@ -70,7 +71,12 @@ class TransactionController extends Controller
         if ($transaction->type === 'move') {
             throw ValidationException::withMessages(['type' => "Moves can't be edited. Delete it and move the money again."]);
         }
+        Wallet::ensureNotPartners($request->user()->couple, $request->user()->id, $transaction->wallet_id, $transaction->to_wallet_id);
         $data = $this->validated($request, partial: true);
+        // A new payer must be able to use the wallet the entry keeps.
+        if (isset($data['user_id']) && ! array_key_exists('wallet_id', $data)) {
+            $data['wallet_id'] = $transaction->wallet_id;
+        }
         $transaction->update($this->withWallet($request, $data, $data['user_id'] ?? $transaction->user_id));
 
         return response()->json($transaction->load('user:id,name'));
@@ -82,6 +88,7 @@ class TransactionController extends Controller
         if ($transaction->type === 'release') {
             throw ValidationException::withMessages(['type' => 'Restore the goal instead.']);
         }
+        Wallet::ensureNotPartners($request->user()->couple, $request->user()->id, $transaction->wallet_id, $transaction->to_wallet_id);
         DB::transaction(function () use ($request, $transaction) {
             // A move's fee goes with it.
             $request->user()->couple->transactions()->where('move_id', $transaction->id)->delete();
@@ -92,13 +99,17 @@ class TransactionController extends Controller
     }
 
     /**
-     * Checks the wallet belongs to whoever paid (or is shared) and sets the
+     * Checks the wallet is shared, or the payer's own when they log it
+     * themselves (a partner's personal wallet is theirs to log), and sets the
      * payment_method tag from it. A null wallet_id clears it.
      */
     private function withWallet(Request $request, array $data, int $payerId): array
     {
         if (! empty($data['wallet_id'])) {
             $wallet = Wallet::usable($request->user()->couple, $data['wallet_id'], $payerId);
+            if (! $wallet->usableBy($request->user()->id)) {
+                throw ValidationException::withMessages(['wallet_id' => 'Pick a shared wallet, or let them log it from their own.']);
+            }
             $data['payment_method'] = $wallet->paymentMethod();
         }
 
@@ -111,13 +122,13 @@ class TransactionController extends Controller
 
         return $request->validate([
             'type' => [$req, Rule::in(['expense', 'income'])],
-            'amount' => [$req, 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => [$req, 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'category' => [$req, Rule::in(Transaction::CATEGORIES)],
             'title' => [$req, 'string', 'max:120'],
             'payment_method' => ['sometimes', Rule::in(Transaction::PAYMENT_METHODS)],
             'is_split' => ['sometimes', 'boolean'],
             'wallet_id' => ['sometimes', 'nullable', 'integer'],
-            'occurred_on' => [$req, 'date_format:Y-m-d'],
+            'occurred_on' => [$req, 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
             'user_id' => ['sometimes', 'integer', Rule::in($request->user()->couple->members()->pluck('id'))],
         ]);
     }

@@ -23,20 +23,19 @@ class SplitBalance
         }
         [$a, $b] = [$members[0], $members[1]];
 
-        $month = $now->format('Y-m').'-%';
         $shared = $couple->wallets()->whereNull('user_id')->pluck('id');
         $expenses = fn () => $couple->transactions()->where('type', 'expense');
         $splitPaid = $expenses()->where('is_split', true)
             ->where(fn ($q) => $q->whereNull('wallet_id')->orWhereNotIn('wallet_id', $shared))
             ->groupBy('user_id')->selectRaw('user_id, sum(amount) as total')->pluck('total', 'user_id');
-        $paidThisMonth = $expenses()->where('occurred_on', 'like', $now->format('Y-m').'-%')
+        $paidThisMonth = $expenses()->inMonth($now)
             ->groupBy('user_id')->selectRaw('user_id, sum(amount) as total')->pluck('total', 'user_id');
         $toppedUp = $couple->transactions()->where('type', 'move')->whereIn('to_wallet_id', $shared)
             // Moving between two shared wallets isn't anyone's contribution.
             ->whereNotIn('wallet_id', $shared)
-            ->where('occurred_on', 'like', $month)
+            ->inMonth($now)
             ->groupBy('user_id')->selectRaw('user_id, sum(amount) as total')->pluck('total', 'user_id');
-        $sharedSpent = (float) $expenses()->whereIn('wallet_id', $shared)->where('occurred_on', 'like', $month)->sum('amount');
+        $sharedSpent = (float) $expenses()->whereIn('wallet_id', $shared)->inMonth($now)->sum('amount');
         $settledOut = $couple->settlements()
             ->groupBy('from_user_id')->selectRaw('from_user_id, sum(amount) as total')->pluck('total', 'from_user_id');
 

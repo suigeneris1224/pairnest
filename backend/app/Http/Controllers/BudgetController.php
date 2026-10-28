@@ -20,10 +20,10 @@ class BudgetController extends Controller
     public function upsert(Request $request, string $month): JsonResponse
     {
         $data = $request->validate([
-            'total' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'total' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999'],
             'lines' => ['array'],
             'lines.*.category' => ['required', 'distinct', Rule::in(array_diff(Transaction::CATEGORIES, ['income']))],
-            'lines.*.limit_amount' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'lines.*.limit_amount' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999'],
         ]);
 
         $couple = $request->user()->couple;

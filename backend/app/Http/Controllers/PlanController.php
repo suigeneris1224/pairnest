@@ -14,6 +14,7 @@ class PlanController extends Controller
             ->with(['goal' => fn ($q) => $q->withSum('contributions as saved', 'amount')])
             ->orderByRaw('scheduled_at IS NULL')
             ->orderBy('scheduled_at')
+            ->limit(200)
             ->get();
 
         return response()->json($plans);
@@ -50,7 +51,7 @@ class PlanController extends Controller
             'kind' => [$req, Rule::in(['date', 'life'])],
             'title' => [$req, 'string', 'max:120'],
             'notes' => ['nullable', 'string', 'max:1000'],
-            'scheduled_at' => ['nullable', 'date'],
+            'scheduled_at' => ['nullable', 'date', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
             'goal_id' => ['nullable', Rule::exists('goals', 'id')->where('couple_id', $coupleId)],
         ]);
     }

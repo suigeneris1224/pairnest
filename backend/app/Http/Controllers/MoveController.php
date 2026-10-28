@@ -21,10 +21,10 @@ class MoveController extends Controller
         $data = $request->validate([
             'from_wallet_id' => ['required', 'integer'],
             'to_wallet_id' => ['required', 'integer'],
-            'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'note' => ['nullable', 'string', 'max:120'],
-            'fee' => ['nullable', 'numeric', 'gte:0', 'max:9999999999'],
-            'occurred_on' => ['sometimes', 'date_format:Y-m-d'],
+            'fee' => ['nullable', 'numeric', 'decimal:0,2', 'gte:0', 'max:9999999999'],
+            'occurred_on' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
         ]);
         if ((int) $data['from_wallet_id'] === (int) $data['to_wallet_id']) {
             throw ValidationException::withMessages(['to_wallet_id' => 'Pick two different wallets.']);

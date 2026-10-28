@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Couple;
 use App\Models\Settlement;
-use App\Models\User;
+use App\Models\Wallet;
 use App\Services\SplitBalance;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -31,9 +30,9 @@ class SettlementController extends Controller
         }
 
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'from_user_id' => ['required', 'integer', Rule::in($memberIds)],
-            'settled_on' => ['sometimes', 'date_format:Y-m-d'],
+            'settled_on' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before:2100-01-01'],
             'from_wallet_id' => ['nullable', 'integer'],
             'to_wallet_id' => ['nullable', 'integer'],
         ]);
@@ -43,8 +42,8 @@ class SettlementController extends Controller
         $settlement = $couple->settlements()->create([
             'from_user_id' => $fromId,
             'to_user_id' => $toId,
-            'from_wallet_id' => $this->personalWallet($couple, $data['from_wallet_id'] ?? null, $fromId, 'from_wallet_id'),
-            'to_wallet_id' => $this->personalWallet($couple, $data['to_wallet_id'] ?? null, $toId, 'to_wallet_id'),
+            'from_wallet_id' => $this->ownWallet($request, $data['from_wallet_id'] ?? null, $fromId, 'from_wallet_id'),
+            'to_wallet_id' => $this->ownWallet($request, $data['to_wallet_id'] ?? null, $toId, 'to_wallet_id'),
             'amount' => $data['amount'],
             'settled_on' => $data['settled_on'] ?? CarbonImmutable::now()->toDateString(),
         ]);
@@ -52,16 +51,23 @@ class SettlementController extends Controller
         return response()->json($settlement->load(Settlement::WITH), 201);
     }
 
-    /** $id when it's one of $userId's own active wallets (not a shared one), else a validation error. */
-    private function personalWallet(Couple $couple, ?int $id, int $userId, string $field): ?int
+    /**
+     * $id when it's one of your own active wallets (not a shared one) on your
+     * side of the settle-up, else a validation error. Your partner's wallets
+     * are theirs to track.
+     */
+    private function ownWallet(Request $request, ?int $id, int $sideId, string $field): ?int
     {
         if ($id === null) {
             return null;
         }
-        $wallet = $couple->wallets()->active()->find($id);
-        if (! $wallet || $wallet->user_id !== $userId) {
-            $name = $userId === request()->user()->id ? 'your' : User::find($userId)->name."'s";
-            throw ValidationException::withMessages([$field => "Pick one of {$name} own wallets."]);
+        $me = $request->user();
+        if ($sideId !== $me->id) {
+            throw ValidationException::withMessages([$field => 'Only your partner can pick their wallet.']);
+        }
+        $wallet = $me->couple->wallets()->active()->find($id);
+        if (! $wallet || $wallet->user_id !== $me->id) {
+            throw ValidationException::withMessages([$field => 'Pick one of your own wallets.']);
         }
 
         return $wallet->id;
@@ -69,7 +75,10 @@ class SettlementController extends Controller
 
     public function destroy(Request $request, int $id): JsonResponse
     {
-        $request->user()->couple->settlements()->findOrFail($id)->delete();
+        $couple = $request->user()->couple;
+        $settlement = $couple->settlements()->findOrFail($id);
+        Wallet::ensureNotPartners($couple, $request->user()->id, $settlement->from_wallet_id, $settlement->to_wallet_id);
+        $settlement->delete();
 
         return response()->json(null, 204);
     }

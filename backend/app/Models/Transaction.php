@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -22,6 +24,12 @@ class Transaction extends Model
     protected function casts(): array
     {
         return ['amount' => 'float', 'is_split' => 'boolean', 'occurred_on' => 'date:Y-m-d'];
+    }
+
+    /** Within $month's calendar month; a range, so the (couple_id, occurred_on) index is used. */
+    public function scopeInMonth(Builder $query, CarbonImmutable $month): void
+    {
+        $query->whereBetween('occurred_on', [$month->startOfMonth()->toDateString(), $month->endOfMonth()->toDateString()]);
     }
 
     public function user(): BelongsTo
